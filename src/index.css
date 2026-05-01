@@ -1,0 +1,9 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; overflow: hidden; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #EEF2F7; color: #1A1A1A; }
+button { font-family: inherit; cursor: pointer; }
+input, textarea, select { font-family: inherit; }
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: #EEF2F7; }
+::-webkit-scrollbar-thumb { background: #C0CBDB; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #9AAABB; }

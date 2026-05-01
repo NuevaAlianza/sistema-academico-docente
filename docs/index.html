@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema Académico Docente — Nueva Alianza</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box }
+    body { font-family:'Segoe UI',system-ui,sans-serif; background:#0D1B2A; color:#E2E8F0; min-height:100vh }
+    .hero { background:linear-gradient(135deg,#1B3A6B,#2563A8); padding:60px 24px 80px; text-align:center }
+    .hero-icon { font-size:72px; margin-bottom:20px }
+    .hero h1 { font-size:2.2rem; font-weight:800; color:#fff; margin-bottom:12px }
+    .hero p { font-size:1.1rem; color:rgba(255,255,255,0.75); max-width:520px; margin:0 auto; line-height:1.6 }
+    .features { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:16px; padding:48px 24px; max-width:860px; margin:0 auto }
+    .feature-card { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:20px }
+    .feature-card .icon { font-size:28px; margin-bottom:10px }
+    .feature-card h3 { font-size:15px; font-weight:700; color:#fff; margin-bottom:6px }
+    .feature-card p { font-size:13px; color:rgba(255,255,255,0.55); line-height:1.5 }
+    .download-section { background:rgba(255,255,255,0.03); border-top:1px solid rgba(255,255,255,0.08); padding:48px 24px; text-align:center }
+    .download-section h2 { font-size:1.5rem; font-weight:800; color:#fff; margin-bottom:8px }
+    .download-section > p { color:rgba(255,255,255,0.55); margin-bottom:32px; font-size:14px }
+    .code-box { display:inline-block; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:24px 40px; margin-bottom:32px }
+    .code-box label { display:block; font-size:12px; font-weight:700; color:rgba(255,255,255,0.4); letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px }
+    .code-input { display:flex; gap:10px; align-items:center }
+    .code-input input { background:rgba(255,255,255,0.08); border:1.5px solid rgba(255,255,255,0.2); border-radius:8px; color:#fff; font-size:20px; font-weight:700; letter-spacing:4px; padding:10px 20px; width:180px; text-align:center; outline:none }
+    .code-input input:focus { border-color:#60A5FA }
+    .btn-verify { background:#2563A8; border:none; border-radius:8px; color:#fff; cursor:pointer; font-size:14px; font-weight:700; padding:10px 20px }
+    .btn-verify:hover { background:#1D4ED8 }
+    .download-btn { display:none; align-items:center; justify-content:center; gap:12px; background:linear-gradient(135deg,#1A6B3A,#15803D); border:none; border-radius:12px; color:#fff; cursor:pointer; font-size:16px; font-weight:800; margin:0 auto; padding:16px 40px; text-decoration:none; transition:all .2s }
+    .download-btn:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(26,107,58,0.4) }
+    .download-btn.visible { display:flex }
+    .error-msg { display:none; color:#FCA5A5; font-size:13px; margin-top:10px }
+    .error-msg.visible { display:block }
+    .version-info { color:rgba(255,255,255,0.3); font-size:12px; margin-top:16px }
+    .requirements { max-width:860px; margin:0 auto; padding:0 24px 48px; display:flex; gap:12px; flex-wrap:wrap }
+    .req-badge { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:20px; padding:6px 14px; font-size:12px; color:rgba(255,255,255,0.5) }
+    footer { border-top:1px solid rgba(255,255,255,0.06); padding:24px; text-align:center; font-size:12px; color:rgba(255,255,255,0.25) }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <div class="hero-icon">📘</div>
+    <h1>Sistema Académico Docente</h1>
+    <p>Gestión de cursos, asistencia, calificaciones y temario para docentes del Centro Educativo Nueva Alianza.</p>
+  </div>
+
+  <div class="features">
+    <div class="feature-card"><div class="icon">🎯</div><h3>Clase de Hoy</h3><p>Asistencia, tema del día y anotaciones desde una sola pantalla.</p></div>
+    <div class="feature-card"><div class="icon">📝</div><h3>Calificaciones</h3><p>Actividades por competencia, promedio ponderado y semáforo de notas.</p></div>
+    <div class="feature-card"><div class="icon">📋</div><h3>Temario con IA</h3><p>Plan de clase con IA, archivos adjuntos y sincronización entre cursos.</p></div>
+    <div class="feature-card"><div class="icon">✅</div><h3>Asistencia</h3><p>Pase de lista diario, historial mensual, ranking y exportación PDF.</p></div>
+    <div class="feature-card"><div class="icon">📊</div><h3>Dashboard</h3><p>Semáforo de notas por curso y alerta de estudiantes en riesgo.</p></div>
+    <div class="feature-card"><div class="icon">💾</div><h3>Datos locales</h3><p>Todo en tu equipo. Sin suscripciones ni internet requerido.</p></div>
+  </div>
+
+  <div class="download-section">
+    <h2>Descargar</h2>
+    <p>Ingresa el código de acceso proporcionado por tu coordinador.</p>
+    <div class="code-box">
+      <label>Código de acceso</label>
+      <div class="code-input">
+        <input type="password" id="code-input" placeholder="••••••" maxlength="20"
+          onkeydown="if(event.key==='Enter') verificar()">
+        <button class="btn-verify" onclick="verificar()">Verificar</button>
+      </div>
+      <div class="error-msg" id="error-msg">Código incorrecto. Consulta con tu coordinador.</div>
+    </div>
+    <a id="download-btn" class="download-btn" href="#" target="_blank">
+      <span style="font-size:24px">⬇️</span>
+      <div>
+        <div>Descargar para Windows</div>
+        <div style="font-size:12px;font-weight:400;opacity:.8">Instalador .exe · Windows 10/11</div>
+      </div>
+    </a>
+    <div class="version-info" id="version-info"></div>
+  </div>
+
+  <div class="requirements">
+    <span class="req-badge">✅ Windows 10 / 11</span>
+    <span class="req-badge">✅ 200 MB espacio en disco</span>
+    <span class="req-badge">✅ Sin internet para usar</span>
+    <span class="req-badge">✅ Actualizaciones automáticas</span>
+  </div>
+
+  <footer>Centro Educativo Nueva Alianza · Sistema Académico Docente</footer>
+
+  <script>
+    const CODIGO  = 'alianza2025'
+    const OWNER   = 'NuevaAlianza'
+    const REPO    = 'sistema-academico-docente'
+
+    async function cargarVersion() {
+      try {
+        const res  = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`)
+        const data = await res.json()
+        if (data.tag_name) {
+          document.getElementById('version-info').textContent = 'Ultima version: ' + data.tag_name
+          const asset = data.assets?.find(a => a.name.endsWith('.exe'))
+          if (asset) document.getElementById('download-btn').href = asset.browser_download_url
+        }
+      } catch(e) {}
+    }
+
+    function verificar() {
+      const input = document.getElementById('code-input').value.trim()
+      const error = document.getElementById('error-msg')
+      const btn   = document.getElementById('download-btn')
+      if (input === CODIGO) {
+        error.classList.remove('visible')
+        btn.classList.add('visible')
+        cargarVersion()
+        document.getElementById('code-input').style.borderColor = '#4ADE80'
+      } else {
+        error.classList.add('visible')
+        btn.classList.remove('visible')
+        document.getElementById('code-input').style.borderColor = '#F87171'
+        document.getElementById('code-input').value = ''
+      }
+    }
+  </script>
+</body>
+</html>
