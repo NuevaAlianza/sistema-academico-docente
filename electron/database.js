@@ -507,6 +507,9 @@ deleteEstudiante(id) {
   // ponderado del período, estadísticas de asistencia, avance de temas
   // y si tienen observaciones en el cuaderno.
   getReporteGrupal(cursoId, periodoId, materiaId) {
+    const cfg        = this.getConfig();
+    const minimo     = Number(cfg.minimo_aprobatorio || 70);
+    const semVerde   = Number(cfg.semaforo_verde     || 80);
     const estudiantes = this.db.prepare(
       "SELECT id, nombre_completo, numero_lista FROM estudiantes WHERE curso_id=? AND estado='activo' ORDER BY numero_lista"
     ).all(cursoId);
@@ -559,9 +562,9 @@ deleteEstudiante(id) {
         "SELECT COUNT(*) as n FROM observaciones WHERE estudiante_id=?"
       ).get(est.id) || {n:0}).n;
  
-      // Indicadores de riesgo calculados
-      const enRiesgo = (promedio !== null && promedio < 60)
-                    || (asistPct !== null && asistPct < 70);
+      // Indicadores de riesgo calculados usando valores de configuración
+      const enRiesgo = (promedio !== null && promedio < minimo)
+                    || (asistPct !== null && asistPct < semVerde);
  
       return {
         id:              est.id,
@@ -584,9 +587,10 @@ deleteEstudiante(id) {
       temas_total:      temasTotal,
       temas_realizados: temasRealizados,
       estudiantes:      filas,
+      config:           { minimo, semVerde, semAmarillo: Number(cfg.semaforo_amarillo || 60) },
     };
   }
- 
+
   // ── Reporte individual ────────────────────────────────────────
   // Devuelve detalle completo de un estudiante: promedio por competencia,
   // asistencia desglosada, lista de temas con estado y observaciones.

@@ -38,6 +38,10 @@ export default function Calificaciones({ anio, materia }) {
   const [titulosPer,    setTitulosPer]    = useState({})
 
   useEffect(() => {
+    window.api.invoke('get-config').then(c => { if (c) setCfg(c) }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
   if (!anio) return
   Promise.all([
     window.api.invoke('get-cursos',   anio.id),
@@ -281,6 +285,7 @@ useEffect(() => {
     return resultado
   }
 
+  const [cfg,         setCfg]         = useState({ semaforo_verde: '80', semaforo_amarillo: '60', minimo_aprobatorio: '70' })
   const [todasCalifs, setTodasCalifs] = useState({})
   useEffect(() => {
     async function cargarCalifs() {
@@ -299,20 +304,24 @@ useEffect(() => {
   const colPer = COLORES_PER[periodos.findIndex(p => p.id === perSel?.id)] || '#2563A8'
   const conNota = califs.filter(e => e.nota !== '')
   const prom = conNota.length > 0 ? Math.round(conNota.reduce((a, e) => a + Number(e.nota), 0) / conNota.length) : null
-  const colorProm = prom === null ? '#888' : prom >= 85 ? '#1A6B3A' : prom >= 70 ? '#C84B00' : '#B71C1C'
+  const colorProm = prom === null ? '#888' : prom >= semVerde ? '#1A6B3A' : prom >= minAprobatorio ? '#C84B00' : '#B71C1C'
   const actsPorComp = {}
   COMPETENCIAS.forEach(c => { actsPorComp[c.key] = actividades.filter(a => a.competencia === c.key) })
 
+  const semVerde   = Number(cfg.semaforo_verde    || 80)
+  const semAmarillo = Number(cfg.semaforo_amarillo || 60)
+  const minAprobatorio = Number(cfg.minimo_aprobatorio || 70)
+
   function colorNota(n) {
     if (n === null) return '#CCC'
-    if (n >= 85) return '#1A6B3A'
-    if (n >= 70) return '#C84B00'
+    if (n >= semVerde)    return '#1A6B3A'
+    if (n >= minAprobatorio) return '#C84B00'
     return '#B71C1C'
   }
   function bgNota(n) {
     if (n === null) return '#F4F4F4'
-    if (n >= 85) return '#D6EEE0'
-    if (n >= 70) return '#FDECD7'
+    if (n >= semVerde)    return '#D6EEE0'
+    if (n >= minAprobatorio) return '#FDECD7'
     return '#FDDFDF'
   }
 
@@ -586,11 +595,11 @@ useEffect(() => {
                 return { est, comps, prom }
               })
               const conProm   = datosEst.filter(d => d.prom !== null)
-              const verdes    = conProm.filter(d => d.prom >= 85).length
-              const amarillos = conProm.filter(d => d.prom >= 70 && d.prom < 85).length
-              const rojos     = conProm.filter(d => d.prom < 70).length
+              const verdes    = conProm.filter(d => d.prom >= semVerde).length
+              const amarillos = conProm.filter(d => d.prom >= minAprobatorio && d.prom < semVerde).length
+              const rojos     = conProm.filter(d => d.prom < minAprobatorio).length
               const promGrupo = conProm.length > 0 ? Math.round(conProm.reduce((a,d) => a + d.prom, 0) / conProm.length) : null
-              const colGrupo  = promGrupo === null ? '#888' : promGrupo >= 85 ? '#1A6B3A' : promGrupo >= 70 ? '#C84B00' : '#B71C1C'
+              const colGrupo  = promGrupo === null ? '#888' : promGrupo >= semVerde ? '#1A6B3A' : promGrupo >= minAprobatorio ? '#C84B00' : '#B71C1C'
               const promsComp = {}
               COMPETENCIAS.forEach(c => {
                 const ns = datosEst.map(d => d.comps[c.key]).filter(n => n !== null)
@@ -601,9 +610,9 @@ useEffect(() => {
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:10 }}>
                   {[
                     { label:'Promedio del grupo', val: promGrupo ?? '—', color: colGrupo, big:true },
-                    { label:'🟢 Aprobados', val: verdes,    color:'#1A6B3A', sub:`≥ 85` },
-                    { label:'🟡 En riesgo',  val: amarillos, color:'#C84B00', sub:`70–84` },
-                    { label:'🔴 Reprobados', val: rojos,     color:'#B71C1C', sub:`< 70` },
+                    { label:'🟢 Aprobados', val: verdes,    color:'#1A6B3A', sub:`≥ ${semVerde}` },
+                    { label:'🟡 En riesgo',  val: amarillos, color:'#C84B00', sub:`${minAprobatorio}–${semVerde - 1}` },
+                    { label:'🔴 Reprobados', val: rojos,     color:'#B71C1C', sub:`< ${minAprobatorio}` },
                     { label:'Sin notas aún', val: estudiantes.length - conProm.length, color:'#888', sub:'estudiantes' },
                   ].map(s => (
                     <div key={s.label} style={{ background:'#fff', borderRadius:12, padding:'14px 16px', border:'1px solid #DDE3ED', textAlign:'center', boxShadow:'0 2px 8px #0001' }}>
@@ -629,8 +638,8 @@ useEffect(() => {
                     </thead>
                     <tbody>
                       {datosEst.map(({ est, comps, prom }, idx) => {
-                        const colP = prom === null ? '#888' : prom >= 85 ? '#1A6B3A' : prom >= 70 ? '#C84B00' : '#B71C1C'
-                        const sem  = prom === null ? '⬜' : prom >= 85 ? '🟢' : prom >= 70 ? '🟡' : '🔴'
+                        const colP = prom === null ? '#888' : prom >= semVerde ? '#1A6B3A' : prom >= minAprobatorio ? '#C84B00' : '#B71C1C'
+                        const sem  = prom === null ? '⬜' : prom >= semVerde ? '🟢' : prom >= minAprobatorio ? '🟡' : '🔴'
                         return (
                           <tr key={est.id} style={{ background: idx%2===0 ? '#fff' : '#FAFBFD' }}>
                             <td style={{ padding:'10px 16px', fontWeight:600, color:'#1B3A6B', position:'sticky', left:0, background:'inherit', borderRight:'1px solid #E8EDF5', whiteSpace:'nowrap' }}>
@@ -679,7 +688,7 @@ useEffect(() => {
                         <td style={{ textAlign:'center', padding:'10px 12px', borderLeft:'2px solid #D6E4F7' }}>
                           {promGrupo!==null?(
                             <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
-                              <span style={{ fontSize:16 }}>{promGrupo>=85?'🟢':promGrupo>=70?'🟡':'🔴'}</span>
+                              <span style={{ fontSize:16 }}>{promGrupo>=semVerde?'🟢':promGrupo>=minAprobatorio?'🟡':'🔴'}</span>
                               <span style={{ fontWeight:900, color:colGrupo, fontSize:16 }}>{promGrupo}</span>
                             </div>
                           ):<span style={{ color:'#CCC' }}>—</span>}
@@ -794,8 +803,8 @@ useEffect(() => {
                   {[
                     { label:'Con nota',   val: conNota.length+'/'+califs.length, color:'#1B3A6B' },
                     { label:'Promedio',   val: prom??'—',                        color:colorProm },
-                    { label:'Aprobados',  val: califs.filter(e=>Number(e.nota)>=70).length, color:'#1A6B3A' },
-                    { label:'Reprobados', val: califs.filter(e=>e.nota!==''&&Number(e.nota)<70).length, color:'#B71C1C' },
+                    { label:'Aprobados',  val: califs.filter(e=>e.nota!==''&&Number(e.nota)>=minAprobatorio).length, color:'#1A6B3A' },
+                    { label:'Reprobados', val: califs.filter(e=>e.nota!==''&&Number(e.nota)<minAprobatorio).length, color:'#B71C1C' },
                   ].map(s => (
                     <div key={s.label} style={{ textAlign:'center' }}>
                       <div style={{ fontSize:18, fontWeight:800, color:s.color }}>{s.val}</div>
