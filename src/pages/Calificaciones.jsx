@@ -287,6 +287,19 @@ useEffect(() => {
       competencias_multi: form.modo === 'multi' ? form.competencias_multi : null,
     }
     if (editandoId) {
+      // Aviso si cambian competencias de actividad multi que ya tiene notas
+      if (form.modo === 'multi') {
+        const actOrig    = actividades.find(a => a.id === editandoId)
+        const compsOrig  = actOrig?.competencias_multi ? JSON.parse(actOrig.competencias_multi) : []
+        const cambiaron  = JSON.stringify([...compsOrig].sort()) !== JSON.stringify([...form.competencias_multi].sort())
+        const tieneNotas = Object.values(todasCalifs[editandoId] || {}).some(n => n !== null)
+        if (cambiaron && tieneNotas) {
+          const ok = window.confirm(
+            'Esta actividad tiene calificaciones guardadas. Cambiar las competencias re-distribuirá las notas equitativamente. ¿Continuar?'
+          )
+          if (!ok) return
+        }
+      }
       await window.api.invoke('update-actividad', editandoId, data)
       toast2('Actividad actualizada ✓')
     } else {
