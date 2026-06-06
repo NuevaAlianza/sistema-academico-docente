@@ -154,16 +154,23 @@ useEffect(() => {
         const notaVal = mapa[est.id]
         if (notaVal === undefined || notaVal === null) { distObj[est.id] = null; continue }
         const existente = await window.api.invoke('get-distribucion-multi', act.id, est.id)
-        if (existente) {
-          distObj[est.id] = existente
-        } else {
-          const def = {}
-          comps.forEach(comp => { def[comp] = Math.round(notaVal / nc * 10) / 10 })
-          distObj[est.id] = def
-        }
+        distObj[est.id] = existente || equipartir(notaVal, comps)
       }
       setDistribuciones(distObj)
     }
+  }
+
+  // Distribuye 'nota' equitativamente entre 'comps' usando floor + residuo en la última
+  // competencia, garantizando que la suma sea exactamente igual a la nota sin errores float.
+  function equipartir(nota, comps) {
+    const nc = comps.length
+    if (nc === 0) return {}
+    const base = Math.floor(nota * 10 / nc) / 10
+    const dist = {}
+    comps.forEach((c, i) => {
+      dist[c] = i < nc - 1 ? base : Math.round((nota - base * (nc - 1)) * 10) / 10
+    })
+    return dist
   }
 
   async function guardarNota(estudianteId, nota) {
@@ -173,8 +180,7 @@ useEffect(() => {
       const comps = actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : []
       const nc = comps.length
       if (n !== null && nc > 0) {
-        const dist = {}
-        comps.forEach(comp => { dist[comp] = Math.round(n / nc * 10) / 10 })
+        const dist = equipartir(n, comps)
         await window.api.invoke('set-calificacion-multi', { actividad_id: actSel.id, estudiante_id: estudianteId, nota: n, distribucion: dist })
         setDistribuciones(prev => ({ ...prev, [estudianteId]: dist }))
       } else if (n === null) {
