@@ -189,11 +189,11 @@ class SistemaDB {
   clonarTemas(srcCursoId, srcPeriodoId, dstCursoId, dstPeriodoId, materiaId) {
     const q = materiaId ? this.db.prepare("SELECT * FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id=? ORDER BY orden,id") : this.db.prepare("SELECT * FROM temas WHERE curso_id=? AND periodo_id=? ORDER BY orden,id");
     const temas = materiaId ? q.all(srcCursoId, srcPeriodoId, materiaId) : q.all(srcCursoId, srcPeriodoId);
-    const ins2 = this.db.prepare("INSERT INTO temas (materia_id,curso_id,periodo_id,orden,titulo,estado) VALUES (?,?,?,?,?,'pendiente')");
+    const ins2 = this.db.prepare("INSERT INTO temas (materia_id,curso_id,periodo_id,orden,titulo,estado,contenido_texto,meta_json) VALUES (?,?,?,?,?,'pendiente',?,?)");
     let copiados = 0;
     for (const t of temas) {
       const existe = this.db.prepare("SELECT id FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id IS ? AND titulo=?").get(dstCursoId, dstPeriodoId, materiaId||null, t.titulo);
-      if (!existe) { ins2.run(materiaId||null, dstCursoId, dstPeriodoId, t.orden, t.titulo); copiados++; }
+      if (!existe) { ins2.run(materiaId||null, dstCursoId, dstPeriodoId, t.orden, t.titulo, t.contenido_texto||null, t.meta_json||null); copiados++; }
     }
     return { total: temas.length, copiados };
   }
