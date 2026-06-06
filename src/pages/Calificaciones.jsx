@@ -621,9 +621,9 @@ useEffect(() => {
               )}
               {estudiantes.length > 0 && actividades.length > 0 && (
                 <button onClick={exportarPDF} style={{ padding:'7px 16px', borderRadius:8, border:'1px solid #B71C1C', fontSize:12, fontWeight:700, background:'transparent', color:'#B71C1C', cursor:'pointer', marginLeft:4 }}>📄 Exportar PDF</button>
+              )}
               {actividades.some(a => a.modo === 'multi') && (
                 <button onClick={exportarPDFMulti} style={{ padding:'7px 16px', borderRadius:8, border:'1px solid #2563A8', fontSize:12, fontWeight:700, background:'transparent', color:'#2563A8', cursor:'pointer', marginLeft:4 }}>🔀 PDF Multi</button>
-              )}
               )}
             </>}
           </div>
