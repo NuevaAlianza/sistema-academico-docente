@@ -134,6 +134,10 @@ function exportarPDFGrupal(datos, cursoSel, periodoSel, materia) {
   </body></html>`
 
   const win = window.open('', '_blank')
+  if (!win) {
+    alert('No se pudo abrir la ventana de impresión. Verifica que el navegador no esté bloqueando ventanas emergentes.')
+    return
+  }
   win.document.write(html)
   win.document.close()
 }
@@ -249,6 +253,10 @@ function exportarPDFIndividual(datos, cursoSel, periodoSel, materia, cfg = { sem
   </body></html>`
 
   const win = window.open('', '_blank')
+  if (!win) {
+    alert('No se pudo abrir la ventana de impresión. Verifica que el navegador no esté bloqueando ventanas emergentes.')
+    return
+  }
   win.document.write(html)
   win.document.close()
 }
