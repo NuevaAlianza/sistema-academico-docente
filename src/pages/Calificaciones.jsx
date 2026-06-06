@@ -725,57 +725,142 @@ useEffect(() => {
         )}
 
         {/* ── VISTA ACTIVIDADES ── */}
-        {vista === 'actividades' && (
-          <div>
-            {actividades.length === 0 ? (
-              <div style={{ background:'#fff', borderRadius:12, padding:40, textAlign:'center', border:'1px solid #DDE3ED' }}>
-                <div style={{ fontSize:36, marginBottom:10 }}>📝</div>
-                <p style={{ color:'#888', fontSize:13, marginBottom:16 }}>No hay actividades todavia</p>
-                <button onClick={() => { setForm(VACIO); setModalAct(true) }} style={{ padding:'9px 24px', background:'#2563A8', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>
-                  + Crear primera actividad
-                </button>
-              </div>
-            ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-                {COMPETENCIAS.map(comp => {
-                  const acts = actsPorComp[comp.key]
-                  if (acts.length === 0) return null
-                  return (
-                    <div key={comp.key}>
+        {vista === 'actividades' && (() => {
+          const actsSimple = actividades.filter(a => (a.modo || 'simple') === 'simple')
+          const actsMulti  = actividades.filter(a => a.modo === 'multi')
+
+          // Franja: peso acumulado por competencia en el período
+          const COL_MULTI = { Comunicativa:'#2563A8', Científica:'#00695C', Ética:'#5C2D91', Cívica:'#C84B00' }
+          const franjaComps = COMPETENCIAS_MULTI.map(comp => {
+            const pesoS = actsSimple.filter(a => a.competencia === comp.key).reduce((s, a) => s + a.peso, 0)
+            const pesoM = actsMulti.reduce((s, a) => {
+              const cs = a.competencias_multi ? JSON.parse(a.competencias_multi) : []
+              return cs.includes(comp.key) ? s + a.peso / cs.length : s
+            }, 0)
+            return { ...comp, peso: Math.round((pesoS + pesoM) * 10) / 10 }
+          }).filter(c => c.peso > 0)
+          const pesoTotal = Math.round(franjaComps.reduce((s, c) => s + c.peso, 0) * 10) / 10
+          const colTotal  = pesoTotal > 100.01 ? '#B71C1C' : pesoTotal >= 99.9 ? '#1A6B3A' : '#C84B00'
+          const actsSimplePorComp = {}
+          COMPETENCIAS.forEach(c => { actsSimplePorComp[c.key] = actsSimple.filter(a => a.competencia === c.key) })
+
+          return (
+            <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+
+              {/* ── Franja de peso ── */}
+              {actividades.length > 0 && (
+                <div style={{ background:'#fff', borderRadius:12, padding:'12px 16px', border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                    {franjaComps.map(c => (
+                      <span key={c.key} style={{ display:'inline-flex', alignItems:'center', gap:4, background:COL_MULTI[c.key]+'18', color:COL_MULTI[c.key], border:'1px solid '+COL_MULTI[c.key]+'40', borderRadius:20, padding:'3px 10px', fontSize:12, fontWeight:700 }}>
+                        {c.icono} {c.key.slice(0,3)} <span style={{ opacity:.7 }}>{c.peso} pts</span>
+                      </span>
+                    ))}
+                    <div style={{ flex:1, minWidth:80, height:10, background:'#EEF2F7', borderRadius:6, overflow:'hidden', display:'flex' }}>
+                      {franjaComps.map(c => (
+                        <div key={c.key} style={{ height:'100%', width:Math.min(c.peso, 100)+'%', background:COL_MULTI[c.key], transition:'width .3s' }} />
+                      ))}
+                    </div>
+                    <span style={{ fontSize:13, fontWeight:800, color:colTotal, whiteSpace:'nowrap' }}>
+                      {pesoTotal}/100 {pesoTotal >= 99.9 && pesoTotal <= 100.01 ? '✓' : ''}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {actividades.length === 0 ? (
+                <div style={{ background:'#fff', borderRadius:12, padding:40, textAlign:'center', border:'1px solid #DDE3ED' }}>
+                  <div style={{ fontSize:36, marginBottom:10 }}>📝</div>
+                  <p style={{ color:'#888', fontSize:13, marginBottom:16 }}>No hay actividades todavía</p>
+                  <button onClick={() => { setForm(VACIO); setModalAct(true) }} style={{ padding:'9px 24px', background:'#2563A8', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                    + Crear primera actividad
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Actividades modo multi */}
+                  {actsMulti.length > 0 && (
+                    <div>
                       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                        <span style={{ fontSize:16 }}>{comp.icono}</span>
-                        <span style={{ fontWeight:700, fontSize:14, color:comp.color }}>{comp.key}</span>
-                        <span style={{ background:comp.bg, color:comp.color, padding:'1px 8px', borderRadius:10, fontSize:11, fontWeight:600 }}>{acts.length} actividades</span>
+                        <span style={{ fontSize:16 }}>🔀</span>
+                        <span style={{ fontWeight:700, fontSize:14, color:'#2563A8' }}>Multi-competencia</span>
+                        <span style={{ background:'#D6E4F7', color:'#2563A8', padding:'1px 8px', borderRadius:10, fontSize:11, fontWeight:600 }}>{actsMulti.length} actividades</span>
                       </div>
                       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px,1fr))', gap:10 }}>
-                        {acts.map(act => (
-                          <div key={act.id} onClick={() => abrirNotas(act)} style={{
-                            background:'#fff', borderRadius:10, padding:14, border:'1px solid #DDE3ED',
-                            boxShadow:'0 2px 8px #0001', cursor:'pointer', transition:'all .15s',
-                            borderLeft:'3px solid '+comp.color,
-                          }}
-                            onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 6px 20px #0002' }}
-                            onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='0 2px 8px #0001' }}>
-                            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
-                              <span style={{ fontSize:16 }}>{TIPO_ICONO[act.tipo]||'📝'}</span>
-                              <div style={{ fontWeight:700, fontSize:13, color:'#1B3A6B', flex:1 }}>{act.nombre}</div>
-                              <button onClick={e => abrirEditar(act, e)} style={{ background:'#EEF2F7', border:'none', borderRadius:6, padding:'3px 8px', fontSize:11, cursor:'pointer', color:'#555', fontWeight:600 }}>✏️</button>
-                              <button onClick={e => eliminarActividad(act, e)} style={{ background:'#FEE2E2', border:'none', borderRadius:6, padding:'3px 8px', fontSize:11, cursor:'pointer', color:'#B91C1C', fontWeight:600 }}>🗑️</button>
+                        {actsMulti.map(act => {
+                          const comps = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
+                          return (
+                            <div key={act.id} onClick={() => abrirNotas(act)} style={{
+                              background:'#fff', borderRadius:10, padding:14, border:'1px solid #DDE3ED',
+                              boxShadow:'0 2px 8px #0001', cursor:'pointer', transition:'all .15s',
+                              borderLeft:'3px solid #2563A8',
+                            }}
+                              onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 6px 20px #0002' }}
+                              onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='0 2px 8px #0001' }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+                                <span style={{ fontSize:16 }}>{TIPO_ICONO[act.tipo]||'📝'}</span>
+                                <div style={{ fontWeight:700, fontSize:13, color:'#1B3A6B', flex:1 }}>{act.nombre}</div>
+                                <button onClick={e => abrirEditar(act, e)} style={{ background:'#EEF2F7', border:'none', borderRadius:6, padding:'3px 8px', fontSize:11, cursor:'pointer', color:'#555', fontWeight:600 }}>✏️</button>
+                                <button onClick={e => eliminarActividad(act, e)} style={{ background:'#FEE2E2', border:'none', borderRadius:6, padding:'3px 8px', fontSize:11, cursor:'pointer', color:'#B91C1C', fontWeight:600 }}>🗑️</button>
+                              </div>
+                              <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginBottom:6 }}>
+                                <span style={{ background:'#D6E4F7', color:'#2563A8', padding:'2px 8px', borderRadius:8, fontSize:10, fontWeight:700 }}>Multi</span>
+                                {comps.map(c => (
+                                  <span key={c} style={{ background:(COL_MULTI[c]||'#888')+'18', color:COL_MULTI[c]||'#888', padding:'2px 7px', borderRadius:8, fontSize:10, fontWeight:600 }}>{c.slice(0,3)}</span>
+                                ))}
+                              </div>
+                              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                                <span style={{ background:'#D6E4F7', color:'#2563A8', padding:'2px 8px', borderRadius:8, fontSize:11, fontWeight:600 }}>Peso: {act.peso} ({comps.length > 0 ? (act.peso/comps.length).toFixed(1)+' c/u' : '—'})</span>
+                                <span style={{ fontSize:11, color:'#888' }}>{act.fecha||''}</span>
+                              </div>
                             </div>
-                            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                              <span style={{ background:comp.bg, color:comp.color, padding:'2px 8px', borderRadius:8, fontSize:11, fontWeight:600 }}>Peso: {act.peso}</span>
-                              <span style={{ fontSize:11, color:'#888' }}>{act.fecha||''}</span>
-                            </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
+                  )}
+
+                  {/* Actividades modo simple agrupadas por competencia */}
+                  {COMPETENCIAS.map(comp => {
+                    const acts = actsSimplePorComp[comp.key]
+                    if (!acts || acts.length === 0) return null
+                    return (
+                      <div key={comp.key}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+                          <span style={{ fontSize:16 }}>{comp.icono}</span>
+                          <span style={{ fontWeight:700, fontSize:14, color:comp.color }}>{comp.key}</span>
+                          <span style={{ background:comp.bg, color:comp.color, padding:'1px 8px', borderRadius:10, fontSize:11, fontWeight:600 }}>{acts.length} actividades</span>
+                        </div>
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px,1fr))', gap:10 }}>
+                          {acts.map(act => (
+                            <div key={act.id} onClick={() => abrirNotas(act)} style={{
+                              background:'#fff', borderRadius:10, padding:14, border:'1px solid #DDE3ED',
+                              boxShadow:'0 2px 8px #0001', cursor:'pointer', transition:'all .15s',
+                              borderLeft:'3px solid '+comp.color,
+                            }}
+                              onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 6px 20px #0002' }}
+                              onMouseLeave={e => { e.currentTarget.style.transform='none'; e.currentTarget.style.boxShadow='0 2px 8px #0001' }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                                <span style={{ fontSize:16 }}>{TIPO_ICONO[act.tipo]||'📝'}</span>
+                                <div style={{ fontWeight:700, fontSize:13, color:'#1B3A6B', flex:1 }}>{act.nombre}</div>
+                                <button onClick={e => abrirEditar(act, e)} style={{ background:'#EEF2F7', border:'none', borderRadius:6, padding:'3px 8px', fontSize:11, cursor:'pointer', color:'#555', fontWeight:600 }}>✏️</button>
+                                <button onClick={e => eliminarActividad(act, e)} style={{ background:'#FEE2E2', border:'none', borderRadius:6, padding:'3px 8px', fontSize:11, cursor:'pointer', color:'#B91C1C', fontWeight:600 }}>🗑️</button>
+                              </div>
+                              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                                <span style={{ background:comp.bg, color:comp.color, padding:'2px 8px', borderRadius:8, fontSize:11, fontWeight:600 }}>Peso: {act.peso}</span>
+                                <span style={{ fontSize:11, color:'#888' }}>{act.fecha||''}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+            </div>
+          )
+        })()}
 
         {/* ── VISTA NOTAS DE ACTIVIDAD ── */}
         {vista === 'notas' && actSel && (
