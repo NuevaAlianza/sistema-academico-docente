@@ -3,6 +3,18 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const { app } = require('electron');
 
+// Distribuye nota equitativamente entre comps (misma lógica que el frontend).
+function equipartir(nota, comps) {
+  const nc = comps.length;
+  if (nc === 0) return {};
+  const base = Math.floor(nota * 10 / nc) / 10;
+  const dist = {};
+  comps.forEach((c, i) => {
+    dist[c] = i < nc - 1 ? base : Math.round((nota - base * (nc - 1)) * 10) / 10;
+  });
+  return dist;
+}
+
 class SistemaDB {
   constructor() { this.db = null; }
 
@@ -289,10 +301,33 @@ deleteEstudiante(id) {
       .run(d.materiaId||null, d.cursoId, d.periodoId, d.nombre, d.tipo||'tarea', d.competencia||'Comunicativa', d.fecha||null, d.peso||1, d.descripcion||'', modo, compsMulti);
   }
   updateActividad(id, d) {
-    const modo = d.modo || 'simple';
-    const compsMulti = (modo === 'multi' && d.competencias_multi) ? JSON.stringify(d.competencias_multi) : null;
-    return this.db.prepare("UPDATE actividades SET nombre=?,tipo=?,competencia=?,fecha=?,peso=?,modo=?,competencias_multi=? WHERE id=?")
-      .run(d.nombre, d.tipo||'tarea', d.competencia||'Comunicativa', d.fecha||null, d.peso||1, modo, compsMulti, id);
+    const modo      = d.modo || 'simple';
+    const compsNew  = (modo === 'multi' && Array.isArray(d.competencias_multi)) ? d.competencias_multi : [];
+    const compsJson = compsNew.length > 0 ? JSON.stringify(compsNew) : null;
+
+    // Si es multi y cambiaron las competencias, redistribuir todas las calificaciones.
+    if (modo === 'multi' && compsNew.length > 0) {
+      const act     = this.db.prepare("SELECT competencias_multi FROM actividades WHERE id=?").get(id);
+      const compsOld = act?.competencias_multi ? JSON.parse(act.competencias_multi) : [];
+      const changed  = [...compsOld].sort().join(',') !== [...compsNew].sort().join(',');
+
+      if (changed) {
+        const califs = this.db.prepare(
+          "SELECT id, nota FROM calificaciones WHERE actividad_id=? AND nota IS NOT NULL"
+        ).all(id);
+        const stmtUpd = this.db.prepare("UPDATE calificaciones SET distribucion_multi=? WHERE id=?");
+        const doUpdate = this.db.transaction(() => {
+          for (const c of califs) {
+            stmtUpd.run(JSON.stringify(equipartir(c.nota, compsNew)), c.id);
+          }
+        });
+        doUpdate();
+      }
+    }
+
+    return this.db.prepare(
+      "UPDATE actividades SET nombre=?,tipo=?,competencia=?,fecha=?,peso=?,modo=?,competencias_multi=? WHERE id=?"
+    ).run(d.nombre, d.tipo||'tarea', d.competencia||'Comunicativa', d.fecha||null, d.peso||1, modo, compsJson, id);
   }
   deleteActividad(id) {
     this.db.prepare("DELETE FROM calificaciones WHERE actividad_id=?").run(id);
