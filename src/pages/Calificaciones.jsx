@@ -45,6 +45,7 @@ export default function Calificaciones({ anio, materia }) {
   const [cargandoHist,    setCargandoHist]    = useState(false)
   const [titulosPer,      setTitulosPer]      = useState({})
   const [distribuciones,  setDistribuciones]  = useState({})
+  const [formError,       setFormError]       = useState('')
 
   useEffect(() => {
     window.api.invoke('get-config').then(c => { if (c) setCfg(c) }).catch(() => {})
@@ -219,7 +220,7 @@ useEffect(() => {
   async function crearActividad() {
     if (!cursoSel) { alert('Selecciona un curso primero'); return }
     if (!perSel) { alert('No hay períodos disponibles.'); return }
-    if (!form.nombre.trim()) { alert('El nombre es obligatorio'); return }
+    if (!form.nombre.trim()) { setFormError('El nombre es obligatorio'); return }
     if (form.modo === 'multi' && form.competencias_multi.length === 0) {
       alert('Selecciona al menos una competencia para el modo multi'); return
     }
@@ -243,7 +244,7 @@ useEffect(() => {
       await window.api.invoke('create-actividad', { cursoId: cursoSel.id, periodoId: perSel.id, materiaId, descripcion: '', ...data })
       toast2('Actividad creada ✓')
     }
-    setModalAct(false); setForm(VACIO); setEditandoId(null)
+    setModalAct(false); setForm(VACIO); setEditandoId(null); setFormError('')
     cargarTodo()
   }
 
@@ -1193,16 +1194,22 @@ useEffect(() => {
         }))
         return (
           <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
-            onClick={e => { if (e.target===e.currentTarget) setModalAct(false) }}>
+            onClick={e => { if (e.target===e.currentTarget) { setModalAct(false); setFormError('') } }}>
             <div style={{ background:'#fff', borderRadius:14, padding:28, width:500, boxShadow:'0 16px 48px #0004', maxHeight:'90vh', overflowY:'auto' }}>
               <h2 style={{ color:'#1B3A6B', marginBottom:16, fontSize:17 }}>{editandoId?'✏️ Editar Actividad':'+ Nueva Actividad'}</h2>
 
               {/* Nombre */}
               <div style={{ marginBottom:14 }}>
                 <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Nombre *</label>
-                <input value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} placeholder="Ej: Tarea 1 - Tipos de familia"
-                  style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none', boxSizing:'border-box' }}
-                  onFocus={e => e.target.style.borderColor='#2563A8'} onBlur={e => e.target.style.borderColor='#DDE3ED'} />
+                <input
+                  value={form.nombre}
+                  onChange={e => { setFormError(''); setForm({...form, nombre: e.target.value}) }}
+                  placeholder="Ej: Tarea 1 - Tipos de familia"
+                  style={{ width:'100%', border:'1.5px solid '+(formError?'#B71C1C':'#DDE3ED'), borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none', boxSizing:'border-box' }}
+                  onFocus={e => { e.target.style.borderColor = formError ? '#B71C1C' : '#2563A8' }}
+                  onBlur={e => { e.target.style.borderColor = formError ? '#B71C1C' : '#DDE3ED' }}
+                />
+                {formError && <div style={{ color:'#B71C1C', fontSize:11, marginTop:4 }}>{formError}</div>}
               </div>
 
               {/* Toggle simple / multi */}
@@ -1308,7 +1315,7 @@ useEffect(() => {
               </div>
 
               <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
-                <button onClick={() => { setModalAct(false); setEditandoId(null); setForm(VACIO) }} style={{ padding:'9px 20px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
+                <button onClick={() => { setModalAct(false); setEditandoId(null); setForm(VACIO); setFormError('') }} style={{ padding:'9px 20px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
                 <button onClick={crearActividad} disabled={!puedeGuardar} style={{ padding:'9px 24px', background:puedeGuardar?'#1B3A6B':'#C0C8D8', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:puedeGuardar?'pointer':'not-allowed' }}>{editandoId?'Guardar cambios':'Crear actividad'}</button>
               </div>
             </div>
