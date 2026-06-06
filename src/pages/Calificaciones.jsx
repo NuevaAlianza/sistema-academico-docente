@@ -8,10 +8,18 @@ const COMPETENCIAS = [
   { key:'Tecnologica',         color:'#C84B00', bg:'#FDECD7', icono:'💻' },
 ]
 
+// Competencias disponibles en modo multi-competencia
+const COMPETENCIAS_MULTI = [
+  { key:'Comunicativa', color:'#2563A8', bg:'#D6E4F7', icono:'💬' },
+  { key:'Científica',   color:'#00695C', bg:'#D0EDE8', icono:'🔬' },
+  { key:'Ética',        color:'#5C2D91', bg:'#EDE0F7', icono:'⚖️' },
+  { key:'Cívica',       color:'#C84B00', bg:'#FDECD7', icono:'🏛️' },
+]
+
 const TIPOS = ['Tarea','Exposicion','Proyecto','Examen','Participacion','Cuaderno']
 const TIPO_ICONO = { Tarea:'📝', Exposicion:'🎤', Proyecto:'🔬', Examen:'📄', Participacion:'✋', Cuaderno:'📓' }
 const COLORES_PER = ['#2563A8','#00695C','#5C2D91','#1A6B3A']
-const VACIO = { nombre:'', tipo:'Tarea', competencia:'Comunicativa', fecha:'', peso:'10' }
+const VACIO = { nombre:'', tipo:'Tarea', competencia:'Comunicativa', fecha:'', peso:'10', modo:'simple', competencias_multi:[] }
 
 export default function Calificaciones({ anio, materia }) {
   const location = useLocation()
@@ -145,7 +153,12 @@ useEffect(() => {
   function abrirEditar(act, e) {
     e.stopPropagation()
     setEditandoId(act.id)
-    setForm({ nombre: act.nombre, tipo: act.tipo, competencia: act.competencia, fecha: act.fecha || '', peso: String(act.peso) })
+    setForm({
+      nombre: act.nombre, tipo: act.tipo, competencia: act.competencia,
+      fecha: act.fecha || '', peso: String(act.peso),
+      modo: act.modo || 'simple',
+      competencias_multi: act.competencias_multi ? JSON.parse(act.competencias_multi) : [],
+    })
     setModalAct(true)
   }
 
@@ -153,18 +166,27 @@ useEffect(() => {
     if (!cursoSel) { alert('Selecciona un curso primero'); return }
     if (!perSel) { alert('No hay períodos disponibles.'); return }
     if (!form.nombre.trim()) { alert('El nombre es obligatorio'); return }
+    if (form.modo === 'multi' && form.competencias_multi.length === 0) {
+      alert('Selecciona al menos una competencia para el modo multi'); return
+    }
+    const pesoNum = Number(form.peso) || 10
+    const pesoUsado = actividades
+      .filter(a => !editandoId || a.id !== editandoId)
+      .reduce((s, a) => s + a.peso, 0)
+    if (pesoUsado + pesoNum > 100.01) {
+      alert(`El peso total excedería 100. Disponible: ${Math.max(0, 100 - pesoUsado)} pts`); return
+    }
+    const data = {
+      nombre: form.nombre.trim(), tipo: form.tipo, competencia: form.competencia,
+      fecha: form.fecha || null, peso: pesoNum,
+      modo: form.modo,
+      competencias_multi: form.modo === 'multi' ? form.competencias_multi : null,
+    }
     if (editandoId) {
-      await window.api.invoke('update-actividad', editandoId, {
-        nombre: form.nombre.trim(), tipo: form.tipo, competencia: form.competencia,
-        fecha: form.fecha || null, peso: Number(form.peso) || 10,
-      })
+      await window.api.invoke('update-actividad', editandoId, data)
       toast2('Actividad actualizada ✓')
     } else {
-      await window.api.invoke('create-actividad', {
-        cursoId: cursoSel.id, periodoId: perSel.id, materiaId, nombre: form.nombre.trim(),
-        tipo: form.tipo, competencia: form.competencia, fecha: form.fecha || null,
-        peso: Number(form.peso) || 10, descripcion: '',
-      })
+      await window.api.invoke('create-actividad', { cursoId: cursoSel.id, periodoId: perSel.id, materiaId, descripcion: '', ...data })
       toast2('Actividad creada ✓')
     }
     setModalAct(false); setForm(VACIO); setEditandoId(null)
@@ -819,63 +841,143 @@ useEffect(() => {
       </div>
 
       {/* MODAL NUEVA ACTIVIDAD */}
-      {modalAct && (
-        <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
-          onClick={e => { if (e.target===e.currentTarget) setModalAct(false) }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:28, width:480, boxShadow:'0 16px 48px #0004' }}>
-            <h2 style={{ color:'#1B3A6B', marginBottom:20, fontSize:17 }}>{editandoId?'✏️ Editar Actividad':'+ Nueva Actividad'}</h2>
-            <div style={{ marginBottom:14 }}>
-              <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Nombre *</label>
-              <input value={form.nombre} onChange={e => setForm(p => ({...p,nombre:e.target.value}))} placeholder="Ej: Tarea 1 - Tipos de familia"
-                style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none' }}
-                onFocus={e => e.target.style.borderColor='#2563A8'} onBlur={e => e.target.style.borderColor='#DDE3ED'} />
-            </div>
-            <div style={{ marginBottom:14 }}>
-              <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:8 }}>Competencia *</label>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                {COMPETENCIAS.map(c => (
-                  <div key={c.key} onClick={() => setForm(p => ({...p,competencia:c.key}))} style={{
-                    padding:'10px 12px', borderRadius:10, cursor:'pointer',
-                    background:form.competencia===c.key?c.bg:'#F8FAFD',
-                    border:'2px solid '+(form.competencia===c.key?c.color:'#DDE3ED'), transition:'all .12s',
-                  }}>
-                    <div style={{ fontSize:16, marginBottom:2 }}>{c.icono}</div>
-                    <div style={{ fontSize:12, fontWeight:700, color:form.competencia===c.key?c.color:'#555' }}>{c.key}</div>
+      {modalAct && (() => {
+        const pesoUsado = actividades.filter(a => !editandoId || a.id !== editandoId).reduce((s, a) => s + a.peso, 0)
+        const pesoIngresado = Number(form.peso) || 0
+        const pesoDisponible = Math.max(0, 100 - pesoUsado)
+        const pesoExcede = pesoUsado + pesoIngresado > 100.01
+        const multiSinComps = form.modo === 'multi' && form.competencias_multi.length === 0
+        const puedeGuardar = !pesoExcede && !multiSinComps
+        const toggleCompMulti = key => setForm(p => ({
+          ...p,
+          competencias_multi: p.competencias_multi.includes(key)
+            ? p.competencias_multi.filter(k => k !== key)
+            : [...p.competencias_multi, key],
+        }))
+        return (
+          <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+            onClick={e => { if (e.target===e.currentTarget) setModalAct(false) }}>
+            <div style={{ background:'#fff', borderRadius:14, padding:28, width:500, boxShadow:'0 16px 48px #0004', maxHeight:'90vh', overflowY:'auto' }}>
+              <h2 style={{ color:'#1B3A6B', marginBottom:16, fontSize:17 }}>{editandoId?'✏️ Editar Actividad':'+ Nueva Actividad'}</h2>
+
+              {/* Nombre */}
+              <div style={{ marginBottom:14 }}>
+                <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Nombre *</label>
+                <input value={form.nombre} onChange={e => setForm(p => ({...p,nombre:e.target.value}))} placeholder="Ej: Tarea 1 - Tipos de familia"
+                  style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none', boxSizing:'border-box' }}
+                  onFocus={e => e.target.style.borderColor='#2563A8'} onBlur={e => e.target.style.borderColor='#DDE3ED'} />
+              </div>
+
+              {/* Toggle simple / multi */}
+              <div style={{ marginBottom:14 }}>
+                <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:8 }}>Modo de calificación</label>
+                <div style={{ display:'flex', gap:0, background:'#EEF2F7', borderRadius:8, padding:3, width:'fit-content' }}>
+                  {[{v:'simple',label:'Por competencia'},{v:'multi',label:'Multi-competencia'}].map(opt => (
+                    <button key={opt.v} onClick={() => setForm(p => ({...p, modo:opt.v}))} style={{
+                      padding:'6px 16px', border:'none', borderRadius:6, fontSize:12, fontWeight:700, cursor:'pointer',
+                      background: form.modo===opt.v ? '#1B3A6B' : 'transparent',
+                      color: form.modo===opt.v ? '#fff' : '#888', transition:'all .12s',
+                    }}>{opt.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Selector de competencia (modo simple) */}
+              {form.modo === 'simple' && (
+                <div style={{ marginBottom:14 }}>
+                  <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:8 }}>Competencia *</label>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    {COMPETENCIAS.map(c => (
+                      <div key={c.key} onClick={() => setForm(p => ({...p,competencia:c.key}))} style={{
+                        padding:'10px 12px', borderRadius:10, cursor:'pointer',
+                        background:form.competencia===c.key?c.bg:'#F8FAFD',
+                        border:'2px solid '+(form.competencia===c.key?c.color:'#DDE3ED'), transition:'all .12s',
+                      }}>
+                        <div style={{ fontSize:16, marginBottom:2 }}>{c.icono}</div>
+                        <div style={{ fontSize:12, fontWeight:700, color:form.competencia===c.key?c.color:'#555' }}>{c.key}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+              )}
+
+              {/* Checkboxes de competencias (modo multi) */}
+              {form.modo === 'multi' && (
+                <div style={{ marginBottom:14 }}>
+                  <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:8 }}>
+                    Competencias que cubre *
+                    {form.competencias_multi.length > 0 &&
+                      <span style={{ marginLeft:6, fontSize:11, color:'#888', fontWeight:400 }}>
+                        (peso {(pesoIngresado / form.competencias_multi.length).toFixed(1)} pts cada una)
+                      </span>
+                    }
+                  </label>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    {COMPETENCIAS_MULTI.map(c => {
+                      const sel = form.competencias_multi.includes(c.key)
+                      return (
+                        <div key={c.key} onClick={() => toggleCompMulti(c.key)} style={{
+                          padding:'10px 12px', borderRadius:10, cursor:'pointer', display:'flex', alignItems:'center', gap:10,
+                          background: sel ? c.bg : '#F8FAFD',
+                          border:'2px solid '+(sel ? c.color : '#DDE3ED'), transition:'all .12s',
+                        }}>
+                          <div style={{ width:18, height:18, borderRadius:4, border:'2px solid '+(sel?c.color:'#CCC'), background:sel?c.color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                            {sel && <span style={{ color:'#fff', fontSize:11, fontWeight:900 }}>✓</span>}
+                          </div>
+                          <div>
+                            <span style={{ fontSize:14, marginRight:4 }}>{c.icono}</span>
+                            <span style={{ fontSize:12, fontWeight:700, color:sel?c.color:'#555' }}>{c.key}</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {multiSinComps && <div style={{ fontSize:11, color:'#A32D2D', marginTop:6 }}>Selecciona al menos una competencia</div>}
+                  {form.modo === 'multi' && <div style={{ fontSize:11, color:'#888', marginTop:6, padding:'6px 10px', background:'#F0F7FF', borderRadius:6 }}>
+                    💡 El peso se divide equitativamente entre las competencias seleccionadas
+                  </div>}
+                </div>
+              )}
+
+              {/* Tipo / Peso / Fecha */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:8 }}>
+                <div>
+                  <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Tipo</label>
+                  <select value={form.tipo} onChange={e => setForm(p => ({...p,tipo:e.target.value}))}
+                    style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 10px', fontSize:12, outline:'none', background:'#fff' }}>
+                    {TIPOS.map(t => <option key={t} value={t}>{TIPO_ICONO[t]} {t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Peso</label>
+                  <input type="number" min="1" max="100" value={form.peso} onChange={e => setForm(p => ({...p,peso:e.target.value}))}
+                    style={{ width:'100%', border:'1.5px solid '+(pesoExcede?'#B71C1C':'#DDE3ED'), borderRadius:8, padding:'9px 10px', fontSize:12, outline:'none', color:pesoExcede?'#B71C1C':'inherit' }}
+                    onFocus={e => e.target.style.borderColor=pesoExcede?'#B71C1C':'#2563A8'} onBlur={e => e.target.style.borderColor=pesoExcede?'#B71C1C':'#DDE3ED'} />
+                </div>
+                <div>
+                  <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Fecha</label>
+                  <input type="date" value={form.fecha} onChange={e => setForm(p => ({...p,fecha:e.target.value}))}
+                    style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 10px', fontSize:12, outline:'none' }}
+                    onFocus={e => e.target.style.borderColor='#2563A8'} onBlur={e => e.target.style.borderColor='#DDE3ED'} />
+                </div>
               </div>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:18 }}>
-              <div>
-                <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Tipo</label>
-                <select value={form.tipo} onChange={e => setForm(p => ({...p,tipo:e.target.value}))}
-                  style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 10px', fontSize:12, outline:'none', background:'#fff' }}>
-                  {TIPOS.map(t => <option key={t} value={t}>{TIPO_ICONO[t]} {t}</option>)}
-                </select>
+
+              {/* Preview peso disponible */}
+              <div style={{ marginBottom:14, padding:'8px 12px', borderRadius:8, background: pesoExcede?'#FFF0F0':'#F8FAFD', border:'1px solid '+(pesoExcede?'#FFBBBB':'#E8EDF5'), fontSize:11 }}>
+                {pesoExcede
+                  ? <span style={{ color:'#B71C1C', fontWeight:700 }}>⚠️ Peso excede el 100. Usados: {pesoUsado} pts — este período solo quedan {pesoDisponible} pts disponibles.</span>
+                  : <span style={{ color:'#888' }}>Período actual: <strong style={{ color:'#1B3A6B' }}>{pesoUsado}</strong>/100 pts usados — quedan <strong style={{ color: pesoDisponible < 10 ? '#C84B00' : '#1A6B3A' }}>{pesoDisponible}</strong> pts disponibles</span>
+                }
               </div>
-              <div>
-                <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Peso</label>
-                <input type="number" min="1" max="100" value={form.peso} onChange={e => setForm(p => ({...p,peso:e.target.value}))}
-                  style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 10px', fontSize:12, outline:'none' }}
-                  onFocus={e => e.target.style.borderColor='#2563A8'} onBlur={e => e.target.style.borderColor='#DDE3ED'} />
+
+              <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+                <button onClick={() => { setModalAct(false); setEditandoId(null); setForm(VACIO) }} style={{ padding:'9px 20px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
+                <button onClick={crearActividad} disabled={!puedeGuardar} style={{ padding:'9px 24px', background:puedeGuardar?'#1B3A6B':'#C0C8D8', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:puedeGuardar?'pointer':'not-allowed' }}>{editandoId?'Guardar cambios':'Crear actividad'}</button>
               </div>
-              <div>
-                <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Fecha</label>
-                <input type="date" value={form.fecha} onChange={e => setForm(p => ({...p,fecha:e.target.value}))}
-                  style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 10px', fontSize:12, outline:'none' }}
-                  onFocus={e => e.target.style.borderColor='#2563A8'} onBlur={e => e.target.style.borderColor='#DDE3ED'} />
-              </div>
-            </div>
-            <div style={{ background:'#F8FAFD', borderRadius:8, padding:'10px 12px', marginBottom:16, fontSize:11, color:'#888' }}>
-              💡 Peso flexible: si planificas 3 actividades pero solo haces 2, ponles peso 50 cada una.
-            </div>
-            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
-              <button onClick={() => { setModalAct(false); setEditandoId(null); setForm(VACIO) }} style={{ padding:'9px 20px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
-              <button onClick={crearActividad} style={{ padding:'9px 24px', background:'#1B3A6B', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>{editandoId?'Guardar cambios':'Crear actividad'}</button>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* MODAL DUPLICAR */}
       {modalDuplicar && (
