@@ -3,16 +3,19 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const { app } = require('electron');
 
-// Distribuye nota equitativamente entre comps (misma lógica que el frontend).
-function equipartir(nota, comps) {
+// Distribución por defecto: cada comp al techo (100 / n_comps).
+// Usada al abrir celda vacía o al cambiar competencias de una actividad.
+function defaultDist(comps) {
   const nc = comps.length;
   if (nc === 0) return {};
-  const base = Math.floor(nota * 10 / nc) / 10;
+  const techo = Math.round(100 / nc * 10) / 10;
   const dist = {};
-  comps.forEach((c, i) => {
-    dist[c] = i < nc - 1 ? base : Math.round((nota - base * (nc - 1)) * 10) / 10;
-  });
+  comps.forEach(c => { dist[c] = techo; });
   return dist;
+}
+
+function notaFromDist(dist) {
+  return Math.round(Object.values(dist).reduce((a, b) => a + b, 0) * 10) / 10;
 }
 
 class SistemaDB {
@@ -312,14 +315,12 @@ deleteEstudiante(id) {
       const changed  = [...compsOld].sort().join(',') !== [...compsNew].sort().join(',');
 
       if (changed) {
-        const califs = this.db.prepare(
-          "SELECT id, nota FROM calificaciones WHERE actividad_id=? AND nota IS NOT NULL"
-        ).all(id);
-        const stmtUpd = this.db.prepare("UPDATE calificaciones SET distribucion_multi=? WHERE id=?");
+        const califs  = this.db.prepare("SELECT id FROM calificaciones WHERE actividad_id=? AND nota IS NOT NULL").all(id);
+        const newDist = defaultDist(compsNew);
+        const newNota = notaFromDist(newDist);
+        const stmtUpd = this.db.prepare("UPDATE calificaciones SET nota=?, distribucion_multi=? WHERE id=?");
         const doUpdate = this.db.transaction(() => {
-          for (const c of califs) {
-            stmtUpd.run(JSON.stringify(equipartir(c.nota, compsNew)), c.id);
-          }
+          for (const c of califs) stmtUpd.run(newNota, JSON.stringify(newDist), c.id);
         });
         doUpdate();
       }
@@ -350,11 +351,19 @@ deleteEstudiante(id) {
   setCalificacion(d) { return this.db.prepare("INSERT OR REPLACE INTO calificaciones (actividad_id,estudiante_id,nota,observacion) VALUES (?,?,?,?)").run(d.actividadId, d.estudianteId, d.nota, d.observacion||null); }
 
   // ── MODO MULTI-COMPETENCIA ───────────────────────────────────────────────
+  // data = { actividad_id, estudiante_id, distribucion }
+  // nota_global se calcula como suma de la distribución.
   setCalificacionMulti(data) {
-    const { actividad_id, estudiante_id, nota, distribucion } = data;
-    const vals = Object.values(distribucion);
-    const suma = vals.reduce((a, b) => a + b, 0);
-    if (suma > nota + 0.01) throw new Error(`Distribución (${suma.toFixed(1)}) supera nota (${nota})`);
+    const { actividad_id, estudiante_id, distribucion } = data;
+    const act   = this.db.prepare("SELECT competencias_multi FROM actividades WHERE id=?").get(actividad_id);
+    const comps = act?.competencias_multi ? JSON.parse(act.competencias_multi) : [];
+    const nc    = comps.length;
+    if (nc === 0) throw new Error('Actividad sin competencias_multi');
+    const techo = 100 / nc;
+    for (const [comp, val] of Object.entries(distribucion)) {
+      if (val > techo + 0.01) throw new Error(`${comp}: ${val.toFixed(1)} supera el techo de ${techo.toFixed(1)}`);
+    }
+    const nota = notaFromDist(distribucion);
     return this.db.prepare(
       "INSERT OR REPLACE INTO calificaciones (actividad_id,estudiante_id,nota,observacion,distribucion_multi) VALUES (?,?,?,'',?)"
     ).run(actividad_id, estudiante_id, nota, JSON.stringify(distribucion));
@@ -365,9 +374,9 @@ deleteEstudiante(id) {
     return row?.distribucion_multi ? JSON.parse(row.distribucion_multi) : null;
   }
 
-  // Devuelve resumen de notas por competencia para actividades modo='multi' en el período.
-  // Fórmula: nota_comp = Σ(avg_dist[comp] × peso) / Σ(peso/n_comps)
-  // Esto equivale a un promedio ponderado por peso de la nota por competencia.
+  // Resumen grupal por competencia para actividades modo='multi'.
+  // Fórmula: nota_comp_en_act = (dist[comp] / techo) × 100
+  //          nota_comp_periodo = Σ(nota_comp_en_act × peso_unit) / Σ(peso_unit)
   getResumenCompetenciasMulti(cursoId, periodoId, materiaId) {
     const COMPS = ['Comunicativa', 'Científica', 'Ética', 'Cívica'];
     const q = materiaId
@@ -376,45 +385,37 @@ deleteEstudiante(id) {
     const actsMulti = materiaId ? q.all(cursoId, periodoId, materiaId) : q.all(cursoId, periodoId);
 
     const resultado = COMPS.map(comp => {
-      let peso_total = 0, peso_evaluado = 0;
-      let suma_ponderada = 0; // Σ(avg_dist[comp] × peso_act) — numerador de la fórmula
-      let puntos_brutos  = 0; // Σ(avg_dist[comp]) — solo para display
+      let peso_total = 0, peso_evaluado = 0, suma_ponderada = 0;
 
       for (const act of actsMulti) {
         const comps = JSON.parse(act.competencias_multi || '[]');
         if (!comps.includes(comp)) continue;
-        const n = comps.length;
-        const pesoComp = act.peso / n;
-        peso_total += pesoComp;
+        const n         = comps.length;
+        const techo     = 100 / n;
+        const peso_unit = act.peso / n;
+        peso_total += peso_unit;
 
         const califs = this.db.prepare(
           "SELECT nota, distribucion_multi FROM calificaciones WHERE actividad_id=? AND nota IS NOT NULL"
         ).all(act.id);
 
         if (califs.length > 0) {
-          peso_evaluado += pesoComp;
-          let suma_dist = 0;
+          peso_evaluado += peso_unit;
+          let suma_notas_comp = 0;
           for (const c of califs) {
-            if (c.distribucion_multi) {
-              const dist = JSON.parse(c.distribucion_multi);
-              suma_dist += dist[comp] || 0;
-            } else {
-              suma_dist += (c.nota || 0) / n; // fallback equitativo
-            }
+            const dist = c.distribucion_multi ? JSON.parse(c.distribucion_multi) : null;
+            const pts  = dist ? (dist[comp] ?? 0) : (c.nota / n);
+            suma_notas_comp += (pts / techo) * 100;
           }
-          const avg_dist = suma_dist / califs.length;
-          suma_ponderada += avg_dist * act.peso; // clave: peso completo de la actividad
-          puntos_brutos  += avg_dist;
+          suma_ponderada += (suma_notas_comp / califs.length) * peso_unit;
         }
       }
 
-      const nota = peso_evaluado > 0 ? Math.round(suma_ponderada / peso_evaluado) : null;
       return {
-        competencia:      comp,
-        peso_total:       Math.round(peso_total * 100) / 100,
-        peso_evaluado:    Math.round(peso_evaluado * 100) / 100,
-        puntos_obtenidos: Math.round(puntos_brutos * 100) / 100,
-        nota,
+        competencia:   comp,
+        peso_total:    Math.round(peso_total    * 100) / 100,
+        peso_evaluado: Math.round(peso_evaluado * 100) / 100,
+        nota: peso_evaluado > 0 ? Math.round(suma_ponderada / peso_evaluado) : null,
       };
     }).filter(c => c.peso_total > 0);
 
@@ -430,15 +431,14 @@ deleteEstudiante(id) {
 
     const resultado = {};
     for (const comp of COMPS) {
-      let peso_evaluado = 0;
-      let suma_ponderada = 0;
-      let en_periodo = false;
+      let peso_evaluado = 0, suma_ponderada = 0, en_periodo = false;
 
       for (const act of actsMulti) {
         const comps = JSON.parse(act.competencias_multi || '[]');
         if (!comps.includes(comp)) continue;
-        const n = comps.length;
-        const pesoComp = act.peso / n;
+        const n         = comps.length;
+        const techo     = 100 / n;
+        const peso_unit = act.peso / n;
         en_periodo = true;
 
         const calif = this.db.prepare(
@@ -446,17 +446,16 @@ deleteEstudiante(id) {
         ).get(act.id, estudianteId);
 
         if (calif && calif.nota !== null) {
-          peso_evaluado += pesoComp;
-          const dist = calif.distribucion_multi ? JSON.parse(calif.distribucion_multi) : null;
-          const pts = dist ? (dist[comp] || 0) : (calif.nota / n);
-          suma_ponderada += pts * act.peso;
+          const dist      = calif.distribucion_multi ? JSON.parse(calif.distribucion_multi) : null;
+          const pts       = dist ? (dist[comp] ?? 0) : (calif.nota / n);
+          const nota_comp = (pts / techo) * 100;
+          peso_evaluado  += peso_unit;
+          suma_ponderada += nota_comp * peso_unit;
         }
       }
 
       if (!en_periodo) continue;
       resultado[comp] = {
-        puntos_obtenidos: Math.round(suma_ponderada * 100) / 100,
-        peso_evaluado:    Math.round(peso_evaluado  * 100) / 100,
         nota: peso_evaluado > 0 ? Math.round(suma_ponderada / peso_evaluado) : null,
       };
     }
@@ -792,12 +791,14 @@ deleteEstudiante(id) {
         const comps = JSON.parse(act.competencias_multi || '[]');
         const n = comps.length;
         if (n === 0) continue;
-        const dist = calif.distribucion_multi ? JSON.parse(calif.distribucion_multi) : null;
+        const techo    = 100 / n;
         const pesoComp = act.peso / n;
+        const dist     = calif.distribucion_multi ? JSON.parse(calif.distribucion_multi) : null;
         for (const c of comps) {
-          const pts = dist ? (dist[c] || 0) : (calif.nota / n);
+          const pts       = dist ? (dist[c] ?? 0) : (calif.nota / n);
+          const nota_comp = (pts / techo) * 100;
           if (!compMap[c]) compMap[c] = { suma: 0, peso: 0 };
-          compMap[c].suma += pts * act.peso;
+          compMap[c].suma += nota_comp * pesoComp;
           compMap[c].peso += pesoComp;
         }
       } else {

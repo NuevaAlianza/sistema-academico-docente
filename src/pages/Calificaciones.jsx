@@ -172,52 +172,31 @@ useEffect(() => {
     setVista('notas')
 
     if (act.modo === 'multi') {
-      const comps = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
-      const nc = comps.length
+      const comps   = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
       const distObj = {}
       for (const est of estudiantes) {
-        const notaVal = mapa[est.id]
-        if (notaVal === undefined || notaVal === null) { distObj[est.id] = null; continue }
         const existente = await window.api.invoke('get-distribucion-multi', act.id, est.id)
-        distObj[est.id] = existente || equipartir(notaVal, comps)
+        distObj[est.id] = existente || defaultDist(comps)
       }
       setDistribuciones(distObj)
     }
   }
 
-  // Distribuye 'nota' equitativamente entre 'comps' usando floor + residuo en la última
-  // competencia, garantizando que la suma sea exactamente igual a la nota sin errores float.
-  function equipartir(nota, comps) {
+  // Distribución por defecto: todas las comps al techo (100 / n_comps).
+  // El maestro baja desde ahí los puntos donde el alumno no llegó.
+  function defaultDist(comps) {
     const nc = comps.length
     if (nc === 0) return {}
-    const base = Math.floor(nota * 10 / nc) / 10
+    const techo = Math.round(100 / nc * 10) / 10
     const dist = {}
-    comps.forEach((c, i) => {
-      dist[c] = i < nc - 1 ? base : Math.round((nota - base * (nc - 1)) * 10) / 10
-    })
+    comps.forEach(c => { dist[c] = techo })
     return dist
   }
 
   async function guardarNota(estudianteId, nota) {
     const n = nota === '' ? null : Number(nota)
     if (n !== null && (isNaN(n) || n < 0 || n > 100)) return
-    if (actSel?.modo === 'multi') {
-      let comps = []
-      try { comps = actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : [] }
-      catch (e) { console.error('guardarNota: JSON.parse falló', actSel.competencias_multi, e); return }
-      const nc = comps.length
-      if (n !== null && nc > 0) {
-        const dist = equipartir(n, comps)
-        console.log('[multi] guardarNota — comps:', comps, 'dist:', dist, 'suma:', Object.values(dist).reduce((a,b)=>a+b,0), 'nota:', n)
-        await window.api.invoke('set-calificacion-multi', { actividad_id: actSel.id, estudiante_id: estudianteId, nota: n, distribucion: dist })
-        setDistribuciones(prev => ({ ...prev, [estudianteId]: dist }))
-      } else if (n === null) {
-        await window.api.invoke('set-calificacion', { actividadId: actSel.id, estudianteId, nota: null, observacion: '' })
-        setDistribuciones(prev => ({ ...prev, [estudianteId]: null }))
-      }
-    } else {
-      await window.api.invoke('set-calificacion', { actividadId: actSel.id, estudianteId, nota: n, observacion: '' })
-    }
+    await window.api.invoke('set-calificacion', { actividadId: actSel.id, estudianteId, nota: n, observacion: '' })
     setCalifs(prev => prev.map(e => e.id === estudianteId ? { ...e, nota } : e))
   }
 
@@ -229,28 +208,23 @@ useEffect(() => {
   }
 
   async function guardarDistComp(estudianteId) {
-    const calif = califs.find(e => e.id === estudianteId)
-    if (!calif || calif.nota === '') return
-    const n = Number(calif.nota)
-    if (isNaN(n)) return
-
-    // Parsear comps de la actividad activa
     let comps = []
     try { comps = actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : [] }
-    catch (e) { console.error('guardarDistComp: JSON.parse falló', e); return }
+    catch (e) { return }
+    const nc = comps.length
+    if (nc === 0) return
+    const techo = Math.round(100 / nc * 10) / 10
 
-    // Distribucion actual en estado — fusionar con base equitativa para garantizar todas las comps
-    const base = equipartir(n, comps)
     const parcial = distribuciones[estudianteId] || {}
     const dist = {}
-    comps.forEach(c => { dist[c] = parcial[c] !== undefined ? parcial[c] : base[c] })
+    comps.forEach(c => { dist[c] = parcial[c] !== undefined ? Number(parcial[c]) : techo })
 
-    const suma = Object.values(dist).reduce((a, b) => a + b, 0)
-    console.log('[multi] guardarDistComp — comp:', comps, 'dist:', dist, 'suma:', suma, 'nota:', n)
-    if (suma > n + 0.01) { console.warn('[multi] suma supera nota, no se guarda'); return }
+    // No guardar si algún valor supera el techo
+    if (comps.some(c => dist[c] > techo + 0.01)) return
 
-    await window.api.invoke('set-calificacion-multi', { actividad_id: actSel.id, estudiante_id: estudianteId, nota: n, distribucion: dist })
-    // Sincronizar estado con el objeto completo que se guardó
+    await window.api.invoke('set-calificacion-multi', { actividad_id: actSel.id, estudiante_id: estudianteId, distribucion: dist })
+    const notaGlobal = Math.round(Object.values(dist).reduce((a, b) => a + b, 0) * 10) / 10
+    setCalifs(prev => prev.map(e => e.id === estudianteId ? { ...e, nota: String(notaGlobal) } : e))
     setDistribuciones(prev => ({ ...prev, [estudianteId]: dist }))
   }
 
@@ -1334,67 +1308,73 @@ useEffect(() => {
               )}
 
               {/* ── MODO MULTI ── */}
-              {esMulti && (
-                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001', overflow:'auto' }}>
-                  {/* Aviso sobre distribución */}
-                  <div style={{ padding:'10px 16px', background:'#EEF5FF', borderBottom:'1px solid #DDE3ED', fontSize:12, color:'#2563A8' }}>
-                    🔀 Modo multi-competencia — Al cambiar la nota global, la distribución se ajusta automáticamente. Puedes modificar cada competencia manualmente (suma ≤ nota).
-                  </div>
-                  {/* Cabecera */}
-                  <div style={{ display:'grid', gridTemplateColumns:`50px 1fr 100px ${compsMulti.map(() => '90px').join(' ')} 80px`, background:'#1B3A6B', padding:'10px 16px', gap:8, alignItems:'center' }}>
-                    {['#','Estudiante','Nota'].map(h => <div key={h} style={{ color:'#9BBFED', fontSize:11, fontWeight:700 }}>{h}</div>)}
-                    {compsMulti.map(c => (
-                      <div key={c} style={{ color: COL_MULTI[c]||'#9BBFED', fontSize:10, fontWeight:700, textAlign:'center' }}>{c.slice(0,3)}</div>
-                    ))}
-                    <div style={{ color:'#9BBFED', fontSize:10, fontWeight:700, textAlign:'center' }}>Suma</div>
-                  </div>
-                  {califs.length === 0
-                    ? <div style={{ padding:30, textAlign:'center', color:'#888', fontSize:13 }}>Agrega estudiantes al curso primero</div>
-                    : califs.map((e, idx) => {
-                      const n = e.nota===''?null:Number(e.nota)
-                      const col = colorNota(n)
-                      const dist = distribuciones[e.id] || {}
-                      const suma = compsMulti.reduce((s, c) => s + (dist[c] || 0), 0)
-                      const sumaOk = n === null || suma <= n + 0.01
-                      const sumaCol = n === null ? '#888' : sumaOk ? '#1A6B3A' : '#B71C1C'
-                      return (
-                        <div key={e.id} style={{ display:'grid', gridTemplateColumns:`50px 1fr 100px ${compsMulti.map(() => '90px').join(' ')} 80px`, padding:'8px 16px', gap:8, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
-                          <div style={{ fontSize:12, fontWeight:700, color:'#7A8FA8' }}>{String(e.numero_lista).padStart(2,'0')}</div>
-                          <div style={{ fontSize:12, fontWeight:600, color:'#1B3A6B', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{e.nombre_completo}</div>
-                          {/* Nota global */}
-                          <input type="number" min="0" max="100" value={e.nota}
-                            onChange={ev => guardarNota(e.id, ev.target.value)} placeholder="—"
-                            style={{ width:60, border:'1.5px solid #DDE3ED', borderRadius:8, padding:'5px 8px', fontSize:13, fontWeight:700, textAlign:'center', outline:'none', color:n!==null?col:'#888' }}
-                            onFocus={ev => ev.target.style.borderColor=colPer}
-                            onBlur={ev => ev.target.style.borderColor='#DDE3ED'} />
-                          {/* Inputs por competencia */}
-                          {compsMulti.map(comp => (
-                            <input key={comp} type="number" min="0" max={n||100} step="0.1"
-                              value={dist[comp] ?? ''}
-                              disabled={n === null}
-                              onChange={ev => cambiarDistComp(e.id, comp, ev.target.value)}
-                              onBlur={() => guardarDistComp(e.id)}
-                              placeholder="—"
-                              style={{ width:60, border:'1.5px solid '+(COL_MULTI[comp]||'#DDE3ED')+'60', borderRadius:8, padding:'5px 8px', fontSize:12, fontWeight:600, textAlign:'center', outline:'none', background: n===null?'#F8FAFD':'#fff', color: COL_MULTI[comp]||'#333', opacity: n===null?0.5:1 }}
-                              onFocus={ev => { if(n!==null) ev.target.style.borderColor=COL_MULTI[comp]||colPer }}
-                            />
-                          ))}
-                          {/* Suma / validación */}
-                          <div style={{ textAlign:'center', fontSize:12, fontWeight:700, color:sumaCol }}>
-                            {n === null ? '—' : sumaOk ? `${Math.round(suma*10)/10} ✓` : `${Math.round(suma*10)/10} ✗`}
-                          </div>
-                        </div>
-                      )
-                    })
-                  }
-                  {califs.length > 0 && (
-                    <div style={{ padding:'10px 16px', background:'#F8FAFD', borderTop:'2px solid #E8EDF5', fontSize:12, color:'#888' }}>
-                      Con nota: <strong style={{ color:'#1B3A6B' }}>{conNota.length}/{califs.length}</strong>
-                      {prom !== null && <> · Promedio: <strong style={{ color:colorProm }}>{prom}</strong></>}
+              {esMulti && (() => {
+                const nc    = compsMulti.length
+                const techo = nc > 0 ? Math.round(100 / nc * 10) / 10 : 0
+                return (
+                  <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001', overflow:'auto' }}>
+                    {/* Encabezado descriptivo */}
+                    <div style={{ padding:'10px 16px', background:'#EEF5FF', borderBottom:'1px solid #DDE3ED', fontSize:12, color:'#2563A8' }}>
+                      🔀 Distribución por competencia (máx <strong>{techo}</strong> pts por comp) — La nota global se calcula automáticamente como suma.
                     </div>
-                  )}
-                </div>
-              )}
+                    {/* Cabecera tabla */}
+                    <div style={{ display:'grid', gridTemplateColumns:`50px 1fr ${compsMulti.map(() => '110px').join(' ')} 100px`, background:'#1B3A6B', padding:'10px 16px', gap:8, alignItems:'center' }}>
+                      {['#','Estudiante'].map(h => <div key={h} style={{ color:'#9BBFED', fontSize:11, fontWeight:700 }}>{h}</div>)}
+                      {compsMulti.map(c => (
+                        <div key={c} style={{ color: COL_MULTI[c]||'#9BBFED', fontSize:10, fontWeight:700, textAlign:'center' }}>
+                          <div>{c.slice(0,3)}</div>
+                          <div style={{ opacity:.6, fontSize:9 }}>/ {techo}</div>
+                        </div>
+                      ))}
+                      <div style={{ color:'#FFD700', fontSize:10, fontWeight:700, textAlign:'center' }}>NOTA GLOBAL</div>
+                    </div>
+                    {califs.length === 0
+                      ? <div style={{ padding:30, textAlign:'center', color:'#888', fontSize:13 }}>Agrega estudiantes al curso primero</div>
+                      : califs.map((e, idx) => {
+                        const guardado = e.nota !== ''
+                        const dist     = distribuciones[e.id] || defaultDist(compsMulti)
+                        const notaGlobal = Math.round(Object.values(dist).reduce((a, b) => a + Number(b||0), 0) * 10) / 10
+                        const hayExceso  = compsMulti.some(c => (dist[c]||0) > techo + 0.01)
+                        const colNota    = hayExceso ? '#B71C1C' : colorNota(guardado ? notaGlobal : null)
+                        return (
+                          <div key={e.id} style={{ display:'grid', gridTemplateColumns:`50px 1fr ${compsMulti.map(() => '110px').join(' ')} 100px`, padding:'8px 16px', gap:8, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
+                            <div style={{ fontSize:12, fontWeight:700, color:'#7A8FA8' }}>{String(e.numero_lista).padStart(2,'0')}</div>
+                            <div style={{ fontSize:12, fontWeight:600, color:'#1B3A6B', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{e.nombre_completo}</div>
+                            {/* Inputs por competencia */}
+                            {compsMulti.map(comp => {
+                              const val    = dist[comp] ?? techo
+                              const excede = val > techo + 0.01
+                              return (
+                                <div key={comp} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                                  <input type="number" min="0" max={techo} step="0.1"
+                                    value={dist[comp] ?? ''}
+                                    onChange={ev => cambiarDistComp(e.id, comp, ev.target.value)}
+                                    onFocus={ev => { ev.target.style.borderColor = excede ? '#B71C1C' : (COL_MULTI[comp]||colPer) }}
+                                    onBlur={ev => { ev.target.style.borderColor = (excede ? '#B71C1C' : (COL_MULTI[comp]||'#DDE3ED'))+'60'; guardarDistComp(e.id) }}
+                                    placeholder={String(techo)}
+                                    style={{ width:72, border:'1.5px solid '+(excede?'#B71C1C':(COL_MULTI[comp]||'#DDE3ED'))+'60', borderRadius:8, padding:'5px 8px', fontSize:12, fontWeight:600, textAlign:'center', outline:'none', background:'#fff', color: excede ? '#B71C1C' : (COL_MULTI[comp]||'#333') }}
+                                  />
+                                  {excede && <div style={{ fontSize:9, color:'#B71C1C', whiteSpace:'nowrap' }}>máximo {techo}</div>}
+                                </div>
+                              )
+                            })}
+                            {/* Nota global (solo lectura) */}
+                            <div style={{ textAlign:'center', fontSize:15, fontWeight:900, color: guardado ? colNota : '#BBBBBB' }}>
+                              {hayExceso ? <span style={{ fontSize:11, color:'#B71C1C' }}>✗ excede</span> : notaGlobal}
+                            </div>
+                          </div>
+                        )
+                      })
+                    }
+                    {califs.length > 0 && (
+                      <div style={{ padding:'10px 16px', background:'#F8FAFD', borderTop:'2px solid #E8EDF5', fontSize:12, color:'#888' }}>
+                        Con nota: <strong style={{ color:'#1B3A6B' }}>{conNota.length}/{califs.length}</strong>
+                        {prom !== null && <> · Promedio: <strong style={{ color:colorProm }}>{prom}</strong></>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )
         })()}
