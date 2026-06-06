@@ -142,7 +142,8 @@ useEffect(() => {
     const c = await window.api.invoke('get-calificaciones', act.id)
     const mapa = {}
     c.forEach(x => { mapa[x.estudiante_id] = x.nota })
-    const listaCalifs = estudiantes.map(e => ({ ...e, nota: mapa[e.id] !== undefined ? String(mapa[e.id]) : '' }))
+    // mapa[e.id] puede ser null (nota borrada) o undefined (sin fila) — ambos → ''
+    const listaCalifs = estudiantes.map(e => ({ ...e, nota: mapa[e.id] != null ? String(mapa[e.id]) : '' }))
     setCalifs(listaCalifs)
     setVista('notas')
 
@@ -175,12 +176,15 @@ useEffect(() => {
 
   async function guardarNota(estudianteId, nota) {
     const n = nota === '' ? null : Number(nota)
-    if (n !== null && (n < 0 || n > 100)) return
+    if (n !== null && (isNaN(n) || n < 0 || n > 100)) return
     if (actSel?.modo === 'multi') {
-      const comps = actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : []
+      let comps = []
+      try { comps = actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : [] }
+      catch (e) { console.error('guardarNota: JSON.parse falló', actSel.competencias_multi, e); return }
       const nc = comps.length
       if (n !== null && nc > 0) {
         const dist = equipartir(n, comps)
+        console.log('[multi] guardarNota — comps:', comps, 'dist:', dist, 'suma:', Object.values(dist).reduce((a,b)=>a+b,0), 'nota:', n)
         await window.api.invoke('set-calificacion-multi', { actividad_id: actSel.id, estudiante_id: estudianteId, nota: n, distribucion: dist })
         setDistribuciones(prev => ({ ...prev, [estudianteId]: dist }))
       } else if (n === null) {
@@ -204,11 +208,26 @@ useEffect(() => {
     const calif = califs.find(e => e.id === estudianteId)
     if (!calif || calif.nota === '') return
     const n = Number(calif.nota)
-    const dist = distribuciones[estudianteId]
-    if (!dist) return
+    if (isNaN(n)) return
+
+    // Parsear comps de la actividad activa
+    let comps = []
+    try { comps = actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : [] }
+    catch (e) { console.error('guardarDistComp: JSON.parse falló', e); return }
+
+    // Distribucion actual en estado — fusionar con base equitativa para garantizar todas las comps
+    const base = equipartir(n, comps)
+    const parcial = distribuciones[estudianteId] || {}
+    const dist = {}
+    comps.forEach(c => { dist[c] = parcial[c] !== undefined ? parcial[c] : base[c] })
+
     const suma = Object.values(dist).reduce((a, b) => a + b, 0)
-    if (suma > n + 0.01) return
+    console.log('[multi] guardarDistComp — comp:', comps, 'dist:', dist, 'suma:', suma, 'nota:', n)
+    if (suma > n + 0.01) { console.warn('[multi] suma supera nota, no se guarda'); return }
+
     await window.api.invoke('set-calificacion-multi', { actividad_id: actSel.id, estudiante_id: estudianteId, nota: n, distribucion: dist })
+    // Sincronizar estado con el objeto completo que se guardó
+    setDistribuciones(prev => ({ ...prev, [estudianteId]: dist }))
   }
 
   function abrirEditar(act, e) {
@@ -1154,7 +1173,7 @@ useEffect(() => {
                           {/* Inputs por competencia */}
                           {compsMulti.map(comp => (
                             <input key={comp} type="number" min="0" max={n||100} step="0.1"
-                              value={dist[comp] !== undefined ? dist[comp] : ''}
+                              value={dist[comp] ?? ''}
                               disabled={n === null}
                               onChange={ev => cambiarDistComp(e.id, comp, ev.target.value)}
                               onBlur={() => guardarDistComp(e.id)}
