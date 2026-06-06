@@ -41,9 +41,10 @@ export default function Calificaciones({ anio, materia }) {
   const [vista,         setVista]         = useState('resumen')
   const [toast,       setToast]       = useState(null)
   const [confirm,     setConfirm]     = useState(null)
-  const [historial,   setHistorial]   = useState([])
-  const [cargandoHist,  setCargandoHist]  = useState(false)
-  const [titulosPer,    setTitulosPer]    = useState({})
+  const [historial,       setHistorial]       = useState([])
+  const [cargandoHist,    setCargandoHist]    = useState(false)
+  const [titulosPer,      setTitulosPer]      = useState({})
+  const [distribuciones,  setDistribuciones]  = useState({})
 
   useEffect(() => {
     window.api.invoke('get-config').then(c => { if (c) setCfg(c) }).catch(() => {})
@@ -136,18 +137,71 @@ useEffect(() => {
 
   async function abrirNotas(act) {
     setActSel(act)
+    setDistribuciones({})
     const c = await window.api.invoke('get-calificaciones', act.id)
     const mapa = {}
     c.forEach(x => { mapa[x.estudiante_id] = x.nota })
-    setCalifs(estudiantes.map(e => ({ ...e, nota: mapa[e.id] !== undefined ? String(mapa[e.id]) : '' })))
+    const listaCalifs = estudiantes.map(e => ({ ...e, nota: mapa[e.id] !== undefined ? String(mapa[e.id]) : '' }))
+    setCalifs(listaCalifs)
     setVista('notas')
+
+    if (act.modo === 'multi') {
+      const comps = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
+      const nc = comps.length
+      const distObj = {}
+      for (const est of estudiantes) {
+        const notaVal = mapa[est.id]
+        if (notaVal === undefined || notaVal === null) { distObj[est.id] = null; continue }
+        const existente = await window.api.invoke('get-distribucion-multi', act.id, est.id)
+        if (existente) {
+          distObj[est.id] = existente
+        } else {
+          const def = {}
+          comps.forEach(comp => { def[comp] = Math.round(notaVal / nc * 10) / 10 })
+          distObj[est.id] = def
+        }
+      }
+      setDistribuciones(distObj)
+    }
   }
 
   async function guardarNota(estudianteId, nota) {
     const n = nota === '' ? null : Number(nota)
     if (n !== null && (n < 0 || n > 100)) return
-    await window.api.invoke('set-calificacion', { actividadId: actSel.id, estudianteId, nota: n, observacion: '' })
+    if (actSel?.modo === 'multi') {
+      const comps = actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : []
+      const nc = comps.length
+      if (n !== null && nc > 0) {
+        const dist = {}
+        comps.forEach(comp => { dist[comp] = Math.round(n / nc * 10) / 10 })
+        await window.api.invoke('set-calificacion-multi', { actividad_id: actSel.id, estudiante_id: estudianteId, nota: n, distribucion: dist })
+        setDistribuciones(prev => ({ ...prev, [estudianteId]: dist }))
+      } else if (n === null) {
+        await window.api.invoke('set-calificacion', { actividadId: actSel.id, estudianteId, nota: null, observacion: '' })
+        setDistribuciones(prev => ({ ...prev, [estudianteId]: null }))
+      }
+    } else {
+      await window.api.invoke('set-calificacion', { actividadId: actSel.id, estudianteId, nota: n, observacion: '' })
+    }
     setCalifs(prev => prev.map(e => e.id === estudianteId ? { ...e, nota } : e))
+  }
+
+  function cambiarDistComp(estudianteId, comp, valor) {
+    setDistribuciones(prev => ({
+      ...prev,
+      [estudianteId]: { ...(prev[estudianteId] || {}), [comp]: Number(valor) || 0 },
+    }))
+  }
+
+  async function guardarDistComp(estudianteId) {
+    const calif = califs.find(e => e.id === estudianteId)
+    if (!calif || calif.nota === '') return
+    const n = Number(calif.nota)
+    const dist = distribuciones[estudianteId]
+    if (!dist) return
+    const suma = Object.values(dist).reduce((a, b) => a + b, 0)
+    if (suma > n + 0.01) return
+    await window.api.invoke('set-calificacion-multi', { actividad_id: actSel.id, estudiante_id: estudianteId, nota: n, distribucion: dist })
   }
 
   function abrirEditar(act, e) {
@@ -863,66 +917,145 @@ useEffect(() => {
         })()}
 
         {/* ── VISTA NOTAS DE ACTIVIDAD ── */}
-        {vista === 'notas' && actSel && (
-          <div>
-            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
-              <button onClick={() => setVista('actividades')} style={{ padding:'7px 14px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:12, cursor:'pointer', color:'#1B3A6B', fontWeight:600 }}>← Volver</button>
-              <div>
-                <div style={{ fontWeight:700, fontSize:15, color:'#1B3A6B' }}>{TIPO_ICONO[actSel.tipo]} {actSel.nombre}</div>
-                <div style={{ fontSize:12, color:'#888' }}>{actSel.competencia}  ·  {actSel.tipo}  ·  Peso: {actSel.peso}{actSel.fecha ? '  ·  '+actSel.fecha : ''}</div>
-              </div>
-              <div style={{ flex:1 }} />
-              {prom !== null && (
-                <div style={{ textAlign:'center', background:'#fff', borderRadius:10, padding:'8px 16px', border:'1px solid #DDE3ED' }}>
-                  <div style={{ fontSize:22, fontWeight:900, color:colorProm }}>{prom}</div>
-                  <div style={{ fontSize:11, color:'#888' }}>promedio</div>
-                </div>
-              )}
-            </div>
-            <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001', overflow:'hidden' }}>
-              <div style={{ display:'grid', gridTemplateColumns:'50px 1fr 150px', background:'#1B3A6B', padding:'10px 20px', gap:10 }}>
-                {['#','Estudiante','Nota (0-100)'].map(h => (
-                  <div key={h} style={{ color:'#9BBFED', fontSize:11, fontWeight:700 }}>{h}</div>
-                ))}
-              </div>
-              {califs.length === 0 ? (
-                <div style={{ padding:30, textAlign:'center', color:'#888', fontSize:13 }}>Agrega estudiantes al curso primero</div>
-              ) : califs.map((e, idx) => {
-                const n = e.nota===''?null:Number(e.nota)
-                const col = n===null?'#888':n>=85?'#1A6B3A':n>=70?'#C84B00':'#B71C1C'
-                return (
-                  <div key={e.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 150px', padding:'10px 20px', gap:10, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
-                    <div style={{ fontSize:13, fontWeight:700, color:'#7A8FA8' }}>{String(e.numero_lista).padStart(2,'0')}</div>
-                    <div style={{ fontSize:13, fontWeight:600, color:'#1B3A6B' }}>{e.nombre_completo}</div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <input type="number" min="0" max="100" value={e.nota}
-                        onChange={ev => guardarNota(e.id, ev.target.value)} placeholder="—"
-                        style={{ width:70, border:'1.5px solid #DDE3ED', borderRadius:8, padding:'6px 10px', fontSize:14, fontWeight:700, textAlign:'center', outline:'none', color:n!==null?col:'#888' }}
-                        onFocus={ev => ev.target.style.borderColor=colPer}
-                        onBlur={ev => ev.target.style.borderColor='#DDE3ED'} />
-                      {n!==null && <div style={{ width:10, height:10, borderRadius:'50%', background:col }} />}
-                    </div>
+        {vista === 'notas' && actSel && (() => {
+          const esMulti = actSel.modo === 'multi'
+          const compsMulti = esMulti && actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : []
+          const COL_MULTI = { Comunicativa:'#2563A8', Científica:'#00695C', Ética:'#5C2D91', Cívica:'#C84B00' }
+
+          return (
+            <div>
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+                <button onClick={() => setVista('actividades')} style={{ padding:'7px 14px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:12, cursor:'pointer', color:'#1B3A6B', fontWeight:600 }}>← Volver</button>
+                <div>
+                  <div style={{ fontWeight:700, fontSize:15, color:'#1B3A6B' }}>{TIPO_ICONO[actSel.tipo]} {actSel.nombre}</div>
+                  <div style={{ fontSize:12, color:'#888' }}>
+                    {esMulti
+                      ? <>Multi-competencia · {compsMulti.join(', ')} · Peso: {actSel.peso}{actSel.fecha ? ' · '+actSel.fecha : ''}</>
+                      : <>{actSel.competencia} · {actSel.tipo} · Peso: {actSel.peso}{actSel.fecha ? ' · '+actSel.fecha : ''}</>
+                    }
                   </div>
-                )
-              })}
-              {califs.length > 0 && (
-                <div style={{ padding:'12px 20px', background:'#F8FAFD', borderTop:'2px solid #E8EDF5', display:'flex', gap:24 }}>
-                  {[
-                    { label:'Con nota',   val: conNota.length+'/'+califs.length, color:'#1B3A6B' },
-                    { label:'Promedio',   val: prom??'—',                        color:colorProm },
-                    { label:'Aprobados',  val: califs.filter(e=>e.nota!==''&&Number(e.nota)>=minAprobatorio).length, color:'#1A6B3A' },
-                    { label:'Reprobados', val: califs.filter(e=>e.nota!==''&&Number(e.nota)<minAprobatorio).length, color:'#B71C1C' },
-                  ].map(s => (
-                    <div key={s.label} style={{ textAlign:'center' }}>
-                      <div style={{ fontSize:18, fontWeight:800, color:s.color }}>{s.val}</div>
-                      <div style={{ fontSize:11, color:'#888' }}>{s.label}</div>
+                </div>
+                <div style={{ flex:1 }} />
+                {prom !== null && (
+                  <div style={{ textAlign:'center', background:'#fff', borderRadius:10, padding:'8px 16px', border:'1px solid #DDE3ED' }}>
+                    <div style={{ fontSize:22, fontWeight:900, color:colorProm }}>{prom}</div>
+                    <div style={{ fontSize:11, color:'#888' }}>promedio</div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── MODO SIMPLE ── */}
+              {!esMulti && (
+                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001', overflow:'hidden' }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'50px 1fr 150px', background:'#1B3A6B', padding:'10px 20px', gap:10 }}>
+                    {['#','Estudiante','Nota (0-100)'].map(h => (
+                      <div key={h} style={{ color:'#9BBFED', fontSize:11, fontWeight:700 }}>{h}</div>
+                    ))}
+                  </div>
+                  {califs.length === 0
+                    ? <div style={{ padding:30, textAlign:'center', color:'#888', fontSize:13 }}>Agrega estudiantes al curso primero</div>
+                    : califs.map((e, idx) => {
+                      const n = e.nota===''?null:Number(e.nota)
+                      const col = colorNota(n)
+                      return (
+                        <div key={e.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 150px', padding:'10px 20px', gap:10, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
+                          <div style={{ fontSize:13, fontWeight:700, color:'#7A8FA8' }}>{String(e.numero_lista).padStart(2,'0')}</div>
+                          <div style={{ fontSize:13, fontWeight:600, color:'#1B3A6B' }}>{e.nombre_completo}</div>
+                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                            <input type="number" min="0" max="100" value={e.nota}
+                              onChange={ev => guardarNota(e.id, ev.target.value)} placeholder="—"
+                              style={{ width:70, border:'1.5px solid #DDE3ED', borderRadius:8, padding:'6px 10px', fontSize:14, fontWeight:700, textAlign:'center', outline:'none', color:n!==null?col:'#888' }}
+                              onFocus={ev => ev.target.style.borderColor=colPer}
+                              onBlur={ev => ev.target.style.borderColor='#DDE3ED'} />
+                            {n!==null && <div style={{ width:10, height:10, borderRadius:'50%', background:col }} />}
+                          </div>
+                        </div>
+                      )
+                    })
+                  }
+                  {califs.length > 0 && (
+                    <div style={{ padding:'12px 20px', background:'#F8FAFD', borderTop:'2px solid #E8EDF5', display:'flex', gap:24 }}>
+                      {[
+                        { label:'Con nota',   val: conNota.length+'/'+califs.length, color:'#1B3A6B' },
+                        { label:'Promedio',   val: prom??'—',                        color:colorProm },
+                        { label:'Aprobados',  val: califs.filter(e=>e.nota!==''&&Number(e.nota)>=minAprobatorio).length, color:'#1A6B3A' },
+                        { label:'Reprobados', val: califs.filter(e=>e.nota!==''&&Number(e.nota)<minAprobatorio).length, color:'#B71C1C' },
+                      ].map(s => (
+                        <div key={s.label} style={{ textAlign:'center' }}>
+                          <div style={{ fontSize:18, fontWeight:800, color:s.color }}>{s.val}</div>
+                          <div style={{ fontSize:11, color:'#888' }}>{s.label}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                </div>
+              )}
+
+              {/* ── MODO MULTI ── */}
+              {esMulti && (
+                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001', overflow:'auto' }}>
+                  {/* Aviso sobre distribución */}
+                  <div style={{ padding:'10px 16px', background:'#EEF5FF', borderBottom:'1px solid #DDE3ED', fontSize:12, color:'#2563A8' }}>
+                    🔀 Modo multi-competencia — Al cambiar la nota global, la distribución se ajusta automáticamente. Puedes modificar cada competencia manualmente (suma ≤ nota).
+                  </div>
+                  {/* Cabecera */}
+                  <div style={{ display:'grid', gridTemplateColumns:`50px 1fr 100px ${compsMulti.map(() => '90px').join(' ')} 80px`, background:'#1B3A6B', padding:'10px 16px', gap:8, alignItems:'center' }}>
+                    {['#','Estudiante','Nota'].map(h => <div key={h} style={{ color:'#9BBFED', fontSize:11, fontWeight:700 }}>{h}</div>)}
+                    {compsMulti.map(c => (
+                      <div key={c} style={{ color: COL_MULTI[c]||'#9BBFED', fontSize:10, fontWeight:700, textAlign:'center' }}>{c.slice(0,3)}</div>
+                    ))}
+                    <div style={{ color:'#9BBFED', fontSize:10, fontWeight:700, textAlign:'center' }}>Suma</div>
+                  </div>
+                  {califs.length === 0
+                    ? <div style={{ padding:30, textAlign:'center', color:'#888', fontSize:13 }}>Agrega estudiantes al curso primero</div>
+                    : califs.map((e, idx) => {
+                      const n = e.nota===''?null:Number(e.nota)
+                      const col = colorNota(n)
+                      const dist = distribuciones[e.id] || {}
+                      const suma = compsMulti.reduce((s, c) => s + (dist[c] || 0), 0)
+                      const sumaOk = n === null || suma <= n + 0.01
+                      const sumaCol = n === null ? '#888' : sumaOk ? '#1A6B3A' : '#B71C1C'
+                      return (
+                        <div key={e.id} style={{ display:'grid', gridTemplateColumns:`50px 1fr 100px ${compsMulti.map(() => '90px').join(' ')} 80px`, padding:'8px 16px', gap:8, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
+                          <div style={{ fontSize:12, fontWeight:700, color:'#7A8FA8' }}>{String(e.numero_lista).padStart(2,'0')}</div>
+                          <div style={{ fontSize:12, fontWeight:600, color:'#1B3A6B', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{e.nombre_completo}</div>
+                          {/* Nota global */}
+                          <input type="number" min="0" max="100" value={e.nota}
+                            onChange={ev => guardarNota(e.id, ev.target.value)} placeholder="—"
+                            style={{ width:60, border:'1.5px solid #DDE3ED', borderRadius:8, padding:'5px 8px', fontSize:13, fontWeight:700, textAlign:'center', outline:'none', color:n!==null?col:'#888' }}
+                            onFocus={ev => ev.target.style.borderColor=colPer}
+                            onBlur={ev => ev.target.style.borderColor='#DDE3ED'} />
+                          {/* Inputs por competencia */}
+                          {compsMulti.map(comp => (
+                            <input key={comp} type="number" min="0" max={n||100} step="0.1"
+                              value={dist[comp] !== undefined ? dist[comp] : ''}
+                              disabled={n === null}
+                              onChange={ev => cambiarDistComp(e.id, comp, ev.target.value)}
+                              onBlur={() => guardarDistComp(e.id)}
+                              placeholder="—"
+                              style={{ width:60, border:'1.5px solid '+(COL_MULTI[comp]||'#DDE3ED')+'60', borderRadius:8, padding:'5px 8px', fontSize:12, fontWeight:600, textAlign:'center', outline:'none', background: n===null?'#F8FAFD':'#fff', color: COL_MULTI[comp]||'#333', opacity: n===null?0.5:1 }}
+                              onFocus={ev => { if(n!==null) ev.target.style.borderColor=COL_MULTI[comp]||colPer }}
+                            />
+                          ))}
+                          {/* Suma / validación */}
+                          <div style={{ textAlign:'center', fontSize:12, fontWeight:700, color:sumaCol }}>
+                            {n === null ? '—' : sumaOk ? `${Math.round(suma*10)/10} ✓` : `${Math.round(suma*10)/10} ✗`}
+                          </div>
+                        </div>
+                      )
+                    })
+                  }
+                  {califs.length > 0 && (
+                    <div style={{ padding:'10px 16px', background:'#F8FAFD', borderTop:'2px solid #E8EDF5', fontSize:12, color:'#888' }}>
+                      Con nota: <strong style={{ color:'#1B3A6B' }}>{conNota.length}/{califs.length}</strong>
+                      {prom !== null && <> · Promedio: <strong style={{ color:colorProm }}>{prom}</strong></>}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
 
       {/* MODAL NUEVA ACTIVIDAD */}
