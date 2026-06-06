@@ -501,6 +501,168 @@ deleteEstudiante(id) {
     }
     return hojas;
   }
+
+    // ── Reporte grupal ────────────────────────────────────────────
+  // Devuelve todos los estudiantes activos del curso con su promedio
+  // ponderado del período, estadísticas de asistencia, avance de temas
+  // y si tienen observaciones en el cuaderno.
+  getReporteGrupal(cursoId, periodoId, materiaId) {
+    const estudiantes = this.db.prepare(
+      "SELECT id, nombre_completo, numero_lista FROM estudiantes WHERE curso_id=? AND estado='activo' ORDER BY numero_lista"
+    ).all(cursoId);
+ 
+    // Temas del curso en este período (dato del grupo, no individual)
+    const temasQ = materiaId
+      ? "SELECT COUNT(*) as n FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id=?"
+      : "SELECT COUNT(*) as n FROM temas WHERE curso_id=? AND periodo_id=?";
+    const realQ = materiaId
+      ? "SELECT COUNT(*) as n FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id=? AND estado='realizado'"
+      : "SELECT COUNT(*) as n FROM temas WHERE curso_id=? AND periodo_id=? AND estado='realizado'";
+ 
+    const tParamsBase = materiaId ? [cursoId, periodoId, materiaId] : [cursoId, periodoId];
+    const temasTotal     = (this.db.prepare(temasQ).get(...tParamsBase) || {n:0}).n;
+    const temasRealizados= (this.db.prepare(realQ).get(...tParamsBase) || {n:0}).n;
+ 
+    const filas = estudiantes.map(est => {
+      // Promedio ponderado del período
+      const notas = this.db.prepare(`
+        SELECT c.nota, a.peso
+        FROM calificaciones c
+        JOIN actividades a ON c.actividad_id = a.id
+        WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=?
+          AND c.nota IS NOT NULL
+      `).all(est.id, cursoId, periodoId);
+ 
+      let promedio     = null;
+      let sinCalificar = notas.length === 0;
+      if (notas.length > 0) {
+        const pesoTotal = notas.reduce((s, n) => s + n.peso, 0);
+        if (pesoTotal > 0)
+          promedio = Math.round(notas.reduce((s, n) => s + n.nota * n.peso, 0) / pesoTotal);
+      }
+ 
+      // Asistencia acumulada en el curso
+      const asistRows = this.db.prepare(
+        "SELECT estado, COUNT(*) as n FROM asistencias WHERE estudiante_id=? AND curso_id=? GROUP BY estado"
+      ).all(est.id, cursoId);
+      const am = {};
+      asistRows.forEach(r => { am[r.estado] = r.n; });
+      const totalClases = asistRows.reduce((s, r) => s + r.n, 0);
+      const presentes   = am['presente']  || 0;
+      const ausentes    = am['ausente']   || 0;
+      const tardanzas   = am['tardanza']  || 0;
+      const excusados   = am['excusado']  || 0;
+      const asistPct    = totalClases > 0 ? Math.round(presentes / totalClases * 100) : null;
+ 
+      // Observaciones en cuaderno (sin filtro de período — todas las del estudiante)
+      const obsCount = (this.db.prepare(
+        "SELECT COUNT(*) as n FROM observaciones WHERE estudiante_id=?"
+      ).get(est.id) || {n:0}).n;
+ 
+      // Indicadores de riesgo calculados
+      const enRiesgo = (promedio !== null && promedio < 60)
+                    || (asistPct !== null && asistPct < 70);
+ 
+      return {
+        id:              est.id,
+        numero_lista:    est.numero_lista,
+        nombre_completo: est.nombre_completo,
+        promedio,
+        sin_calificar:   sinCalificar,
+        asist_pct:       asistPct,
+        asist_total:     totalClases,
+        asist_presentes: presentes,
+        asist_ausentes:  ausentes,
+        asist_tardanzas: tardanzas,
+        asist_excusados: excusados,
+        obs_count:       obsCount,
+        en_riesgo:       enRiesgo,
+      };
+    });
+ 
+    return {
+      temas_total:      temasTotal,
+      temas_realizados: temasRealizados,
+      estudiantes:      filas,
+    };
+  }
+ 
+  // ── Reporte individual ────────────────────────────────────────
+  // Devuelve detalle completo de un estudiante: promedio por competencia,
+  // asistencia desglosada, lista de temas con estado y observaciones.
+  getReporteIndividual(estudianteId, cursoId, periodoId, materiaId) {
+    const est = this.db.prepare("SELECT * FROM estudiantes WHERE id=?").get(estudianteId);
+    if (!est) return null;
+ 
+    // Promedio ponderado global del período (filtrado por materia si aplica)
+    const notasQ = materiaId
+      ? "SELECT c.nota, a.peso, a.competencia FROM calificaciones c JOIN actividades a ON c.actividad_id = a.id WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=? AND a.materia_id=? AND c.nota IS NOT NULL"
+      : "SELECT c.nota, a.peso, a.competencia FROM calificaciones c JOIN actividades a ON c.actividad_id = a.id WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=? AND c.nota IS NOT NULL";
+    const notas = materiaId
+      ? this.db.prepare(notasQ).all(estudianteId, cursoId, periodoId, materiaId)
+      : this.db.prepare(notasQ).all(estudianteId, cursoId, periodoId);
+ 
+    let promedio = null;
+    if (notas.length > 0) {
+      const pesoTotal = notas.reduce((s, n) => s + n.peso, 0);
+      if (pesoTotal > 0)
+        promedio = Math.round(notas.reduce((s, n) => s + n.nota * n.peso, 0) / pesoTotal);
+    }
+ 
+    // Promedio por competencia (para las barras)
+    const compMap = {};
+    notas.forEach(n => {
+      const key = n.competencia || 'Sin competencia';
+      if (!compMap[key]) compMap[key] = { suma: 0, peso: 0 };
+      compMap[key].suma  += n.nota * n.peso;
+      compMap[key].peso  += n.peso;
+    });
+    const competencias = Object.entries(compMap).map(([nombre, v]) => ({
+      nombre,
+      promedio: v.peso > 0 ? Math.round(v.suma / v.peso) : null,
+    }));
+ 
+    // Asistencia
+    const asistRows = this.db.prepare(
+      "SELECT estado, COUNT(*) as n FROM asistencias WHERE estudiante_id=? AND curso_id=? GROUP BY estado"
+    ).all(estudianteId, cursoId);
+    const am = {};
+    asistRows.forEach(r => { am[r.estado] = r.n; });
+    const totalClases = asistRows.reduce((s, r) => s + r.n, 0);
+    const presentes   = am['presente'] || 0;
+    const asistencia  = {
+      total:     totalClases,
+      presentes,
+      ausentes:  am['ausente']  || 0,
+      tardanzas: am['tardanza'] || 0,
+      excusados: am['excusado'] || 0,
+      pct:       totalClases > 0 ? Math.round(presentes / totalClases * 100) : null,
+    };
+ 
+    // Temas del período con su estado actual
+    const temasQ = materiaId
+      ? "SELECT id, titulo, estado, orden FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id=? ORDER BY orden"
+: "SELECT id, titulo, estado, orden FROM temas WHERE curso_id=? AND periodo_id=? ORDER BY orden";
+    const temas = materiaId
+      ? this.db.prepare(temasQ).all(cursoId, periodoId, materiaId)
+      : this.db.prepare(temasQ).all(cursoId, periodoId);
+ 
+    // Observaciones del cuaderno (todas — el docente las filtra visualmente)
+    const observaciones = this.db.prepare(
+      "SELECT id, fecha, texto, tipo FROM observaciones WHERE estudiante_id=? ORDER BY fecha DESC, id DESC"
+    ).all(estudianteId);
+ 
+    return {
+      estudiante:   est,
+      promedio,
+      competencias,
+      asistencia,
+      temas,
+      observaciones,
+    };
+  }
 }
+
+
 
 module.exports = new SistemaDB();
