@@ -493,16 +493,16 @@ useEffect(() => {
     cargarCalifs()
   }, [actividades])
 
+  const semVerde       = Number(cfg.semaforo_verde      || 80)
+  const semAmarillo    = Number(cfg.semaforo_amarillo   || 60)
+  const minAprobatorio = Number(cfg.minimo_aprobatorio  || 70)
+
   const colPer = COLORES_PER[periodos.findIndex(p => p.id === perSel?.id)] || '#2563A8'
   const conNota = califs.filter(e => e.nota !== '')
   const prom = conNota.length > 0 ? Math.round(conNota.reduce((a, e) => a + Number(e.nota), 0) / conNota.length) : null
   const colorProm = prom === null ? '#888' : prom >= semVerde ? '#1A6B3A' : prom >= minAprobatorio ? '#C84B00' : '#B71C1C'
   const actsPorComp = {}
   COMPETENCIAS.forEach(c => { actsPorComp[c.key] = actividades.filter(a => a.competencia === c.key) })
-
-  const semVerde   = Number(cfg.semaforo_verde    || 80)
-  const semAmarillo = Number(cfg.semaforo_amarillo || 60)
-  const minAprobatorio = Number(cfg.minimo_aprobatorio || 70)
 
   function colorNota(n) {
     if (n === null) return '#CCC'
@@ -1200,7 +1200,7 @@ useEffect(() => {
               {/* Nombre */}
               <div style={{ marginBottom:14 }}>
                 <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:5 }}>Nombre *</label>
-                <input value={form.nombre} onChange={e => setForm(p => ({...p,nombre:e.target.value}))} placeholder="Ej: Tarea 1 - Tipos de familia"
+                <input value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} placeholder="Ej: Tarea 1 - Tipos de familia"
                   style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none', boxSizing:'border-box' }}
                   onFocus={e => e.target.style.borderColor='#2563A8'} onBlur={e => e.target.style.borderColor='#DDE3ED'} />
               </div>
