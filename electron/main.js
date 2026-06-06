@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs   = require('fs');
 const db   = require('./database');
+const { iniciarAutoUpdater } = require('./updater')
 
 console.log('✅ MAIN.JS CARGADO DESDE:', __filename);
 
@@ -21,6 +22,7 @@ function crearVentana() {
     win.webContents.openDevTools();
   } else {
     win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    iniciarAutoUpdater(win)
   }
 }
 
@@ -100,8 +102,11 @@ ipcMain.handle('delete-estudiante',     (_, id)      => db.deleteEstudiante(id))
   ipcMain.handle('update-actividad',     (_, id, d)              => db.updateActividad(id, d));
   ipcMain.handle('delete-actividad',     (_, id)                 => db.deleteActividad(id));
   ipcMain.handle('duplicar-actividades', (_, sC, sP, dC, dP, mId) => db.duplicarActividades(sC, sP, dC, dP, mId));
-  ipcMain.handle('get-calificaciones',   (_, actId)              => db.getCalificaciones(actId));
-  ipcMain.handle('set-calificacion',     (_, d)                  => db.setCalificacion(d));
+  ipcMain.handle('get-calificaciones',            (_, actId)      => db.getCalificaciones(actId));
+  ipcMain.handle('set-calificacion',             (_, d)          => db.setCalificacion(d));
+  ipcMain.handle('set-calificacion-multi',       (_, d)          => db.setCalificacionMulti(d));
+  ipcMain.handle('get-distribucion-multi',       (_, aId, eId)   => db.getDistribucionMulti(aId, eId));
+  ipcMain.handle('get-resumen-competencias-multi',(_, cId, pId, mId) => db.getResumenCompetenciasMulti(cId, pId, mId));
 
   ipcMain.handle('get-observaciones',           (_, eId)      => db.getObservaciones(eId));
   ipcMain.handle('get-observaciones-recientes', (_, eId, lim) => db.getObservacionesRecientes(eId, lim));
@@ -120,12 +125,21 @@ ipcMain.handle('delete-estudiante',     (_, id)      => db.deleteEstudiante(id))
 ipcMain.handle('get-estudiantes-sin-nota', (_, cursoId, periodoId, materiaId) =>
   db.getEstudiantesSinNota(cursoId, periodoId, materiaId));
 
+  ipcMain.handle('get-reporte-grupal',     (_, cursoId, periodoId, materiaId) =>
+  db.getReporteGrupal(cursoId, periodoId, materiaId || null));
+ 
+ipcMain.handle('get-reporte-individual', (_, estudianteId, cursoId, periodoId, materiaId) =>
+  db.getReporteIndividual(estudianteId, cursoId, periodoId, materiaId || null));
+
   // ── ESPACIO DEL CURSO ────────────────────────────────────────────────────
   ipcMain.handle('get-curso-nota',        (_, cursoId, mId)      => db.getCursoNota(cursoId, mId));
   ipcMain.handle('set-curso-nota',        (_, cursoId, txt, mId) => db.setCursoNota(cursoId, txt, mId));
   ipcMain.handle('get-curso-anotaciones', (_, cursoId, mId)      => db.getCursoAnotaciones(cursoId, mId));
   ipcMain.handle('add-curso-anotacion',   (_, cursoId, txt, mId) => db.addCursoAnotacion(cursoId, txt, mId));
   ipcMain.handle('del-curso-anotacion',   (_, id)                => db.deleteCursoAnotacion(id));
+
+
+
 
   // 3️⃣ Crear ventana al final
   crearVentana();

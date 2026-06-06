@@ -22,12 +22,15 @@ class SistemaDB {
 
   migrarTablas() {
     const columnas = [
-      { tabla: 'horario_asignaciones', col: 'materia_id', def: 'INTEGER' },
-      { tabla: 'asistencias',          col: 'materia_id', def: 'INTEGER' },
-      { tabla: 'actividades',          col: 'materia_id', def: 'INTEGER' },
-      { tabla: 'temas',                col: 'materia_id', def: 'INTEGER' },
-      { tabla: 'curso_nota_rapida',    col: 'materia_id', def: 'INTEGER' },
-      { tabla: 'curso_anotaciones',    col: 'materia_id', def: 'INTEGER' },
+      { tabla: 'horario_asignaciones', col: 'materia_id',          def: 'INTEGER' },
+      { tabla: 'asistencias',          col: 'materia_id',          def: 'INTEGER' },
+      { tabla: 'actividades',          col: 'materia_id',          def: 'INTEGER' },
+      { tabla: 'actividades',          col: 'modo',                def: "TEXT DEFAULT 'simple'" },
+      { tabla: 'actividades',          col: 'competencias_multi',  def: 'TEXT' },
+      { tabla: 'calificaciones',       col: 'distribucion_multi',  def: 'TEXT' },
+      { tabla: 'temas',                col: 'materia_id',          def: 'INTEGER' },
+      { tabla: 'curso_nota_rapida',    col: 'materia_id',          def: 'INTEGER' },
+      { tabla: 'curso_anotaciones',    col: 'materia_id',          def: 'INTEGER' },
     ]
     for (const { tabla, col, def } of columnas) {
       try {
@@ -279,8 +282,18 @@ deleteEstudiante(id) {
     if (materiaId) return this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=? ORDER BY fecha DESC,id DESC").all(cursoId, periodoId, materiaId);
     return this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? ORDER BY fecha DESC,id DESC").all(cursoId, periodoId);
   }
-  createActividad(d) { return this.db.prepare("INSERT INTO actividades (materia_id,curso_id,periodo_id,nombre,tipo,competencia,fecha,peso,descripcion) VALUES (?,?,?,?,?,?,?,?,?)").run(d.materiaId||null, d.cursoId, d.periodoId, d.nombre, d.tipo||'tarea', d.competencia||'Comunicativa', d.fecha||null, d.peso||1, d.descripcion||''); }
-  updateActividad(id, d) { return this.db.prepare("UPDATE actividades SET nombre=?,tipo=?,competencia=?,fecha=?,peso=? WHERE id=?").run(d.nombre, d.tipo||'tarea', d.competencia||'Comunicativa', d.fecha||null, d.peso||1, id); }
+  createActividad(d) {
+    const modo = d.modo || 'simple';
+    const compsMulti = (modo === 'multi' && d.competencias_multi) ? JSON.stringify(d.competencias_multi) : null;
+    return this.db.prepare("INSERT INTO actividades (materia_id,curso_id,periodo_id,nombre,tipo,competencia,fecha,peso,descripcion,modo,competencias_multi) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+      .run(d.materiaId||null, d.cursoId, d.periodoId, d.nombre, d.tipo||'tarea', d.competencia||'Comunicativa', d.fecha||null, d.peso||1, d.descripcion||'', modo, compsMulti);
+  }
+  updateActividad(id, d) {
+    const modo = d.modo || 'simple';
+    const compsMulti = (modo === 'multi' && d.competencias_multi) ? JSON.stringify(d.competencias_multi) : null;
+    return this.db.prepare("UPDATE actividades SET nombre=?,tipo=?,competencia=?,fecha=?,peso=?,modo=?,competencias_multi=? WHERE id=?")
+      .run(d.nombre, d.tipo||'tarea', d.competencia||'Comunicativa', d.fecha||null, d.peso||1, modo, compsMulti, id);
+  }
   deleteActividad(id) {
     this.db.prepare("DELETE FROM calificaciones WHERE actividad_id=?").run(id);
     return this.db.prepare("DELETE FROM actividades WHERE id=?").run(id);
@@ -289,17 +302,89 @@ deleteEstudiante(id) {
     const acts = materiaId
       ? this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=?").all(sourceCursoId, sourcePeriodoId, materiaId)
       : this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=?").all(sourceCursoId, sourcePeriodoId);
-    const ins = this.db.prepare("INSERT INTO actividades (materia_id,curso_id,periodo_id,nombre,tipo,competencia,fecha,peso,descripcion) VALUES (?,?,?,?,?,?,?,?,?)");
+    const ins = this.db.prepare("INSERT INTO actividades (materia_id,curso_id,periodo_id,nombre,tipo,competencia,fecha,peso,descripcion,modo,competencias_multi) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
     let copiadas = 0;
     for (const a of acts) {
       const existe = this.db.prepare("SELECT id FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id IS ? AND nombre=?").get(targetCursoId, targetPeriodoId, materiaId||null, a.nombre);
-      if (!existe) { ins.run(materiaId||null, targetCursoId, targetPeriodoId, a.nombre, a.tipo, a.competencia, a.fecha, a.peso, a.descripcion||''); copiadas++; }
+      if (!existe) { ins.run(materiaId||null, targetCursoId, targetPeriodoId, a.nombre, a.tipo, a.competencia, a.fecha, a.peso, a.descripcion||'', a.modo||'simple', a.competencias_multi||null); copiadas++; }
     }
     return { total: acts.length, copiadas };
   }
 
   getCalificaciones(actividadId) { return this.db.prepare("SELECT c.*,e.nombre_completo,e.numero_lista FROM calificaciones c JOIN estudiantes e ON c.estudiante_id=e.id WHERE c.actividad_id=? ORDER BY e.numero_lista").all(actividadId); }
   setCalificacion(d) { return this.db.prepare("INSERT OR REPLACE INTO calificaciones (actividad_id,estudiante_id,nota,observacion) VALUES (?,?,?,?)").run(d.actividadId, d.estudianteId, d.nota, d.observacion||null); }
+
+  // ── MODO MULTI-COMPETENCIA ───────────────────────────────────────────────
+  setCalificacionMulti(data) {
+    const { actividad_id, estudiante_id, nota, distribucion } = data;
+    const vals = Object.values(distribucion);
+    const suma = vals.reduce((a, b) => a + b, 0);
+    if (suma > nota + 0.01) throw new Error(`Distribución (${suma.toFixed(1)}) supera nota (${nota})`);
+    return this.db.prepare(
+      "INSERT OR REPLACE INTO calificaciones (actividad_id,estudiante_id,nota,observacion,distribucion_multi) VALUES (?,?,?,'',?)"
+    ).run(actividad_id, estudiante_id, nota, JSON.stringify(distribucion));
+  }
+
+  getDistribucionMulti(actividadId, estudianteId) {
+    const row = this.db.prepare("SELECT distribucion_multi FROM calificaciones WHERE actividad_id=? AND estudiante_id=?").get(actividadId, estudianteId);
+    return row?.distribucion_multi ? JSON.parse(row.distribucion_multi) : null;
+  }
+
+  // Devuelve resumen de notas por competencia para actividades modo='multi' en el período.
+  // Fórmula: nota_comp = Σ(avg_dist[comp] × peso) / Σ(peso/n_comps)
+  // Esto equivale a un promedio ponderado por peso de la nota por competencia.
+  getResumenCompetenciasMulti(cursoId, periodoId, materiaId) {
+    const COMPS = ['Comunicativa', 'Científica', 'Ética', 'Cívica'];
+    const q = materiaId
+      ? this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=? AND modo='multi' ORDER BY id")
+      : this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND modo='multi' ORDER BY id");
+    const actsMulti = materiaId ? q.all(cursoId, periodoId, materiaId) : q.all(cursoId, periodoId);
+
+    const resultado = COMPS.map(comp => {
+      let peso_total = 0, peso_evaluado = 0;
+      let suma_ponderada = 0; // Σ(avg_dist[comp] × peso_act) — numerador de la fórmula
+      let puntos_brutos  = 0; // Σ(avg_dist[comp]) — solo para display
+
+      for (const act of actsMulti) {
+        const comps = JSON.parse(act.competencias_multi || '[]');
+        if (!comps.includes(comp)) continue;
+        const n = comps.length;
+        const pesoComp = act.peso / n;
+        peso_total += pesoComp;
+
+        const califs = this.db.prepare(
+          "SELECT nota, distribucion_multi FROM calificaciones WHERE actividad_id=? AND nota IS NOT NULL"
+        ).all(act.id);
+
+        if (califs.length > 0) {
+          peso_evaluado += pesoComp;
+          let suma_dist = 0;
+          for (const c of califs) {
+            if (c.distribucion_multi) {
+              const dist = JSON.parse(c.distribucion_multi);
+              suma_dist += dist[comp] || 0;
+            } else {
+              suma_dist += (c.nota || 0) / n; // fallback equitativo
+            }
+          }
+          const avg_dist = suma_dist / califs.length;
+          suma_ponderada += avg_dist * act.peso; // clave: peso completo de la actividad
+          puntos_brutos  += avg_dist;
+        }
+      }
+
+      const nota = peso_evaluado > 0 ? Math.round(suma_ponderada / peso_evaluado) : null;
+      return {
+        competencia:      comp,
+        peso_total:       Math.round(peso_total * 100) / 100,
+        peso_evaluado:    Math.round(peso_evaluado * 100) / 100,
+        puntos_obtenidos: Math.round(puntos_brutos * 100) / 100,
+        nota,
+      };
+    }).filter(c => c.peso_total > 0);
+
+    return resultado;
+  }
 
   getObservaciones(estudianteId) { return this.db.prepare("SELECT * FROM observaciones WHERE estudiante_id=? ORDER BY fecha DESC, id DESC").all(estudianteId); }
   createObservacion(d) { return this.db.prepare("INSERT INTO observaciones (estudiante_id, fecha, texto, tipo) VALUES (?, ?, ?, ?)").run(d.estudianteId, d.fecha, d.texto, d.tipo || 'academico'); }
@@ -613,14 +698,38 @@ deleteEstudiante(id) {
         promedio = Math.round(notas.reduce((s, n) => s + n.nota * n.peso, 0) / pesoTotal);
     }
  
-    // Promedio por competencia (para las barras)
+    // Promedio por competencia — maneja modo 'simple' y modo 'multi'
+    // Fórmula combinada: promedio_comp = Σ(pts × peso_act) / Σ(peso_comp)
+    //   simple: pts = nota, peso_act = peso, peso_comp = peso
+    //   multi:  pts = dist[comp], peso_act = peso, peso_comp = peso/n_comps
+    const actividades = materiaId
+      ? this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=? ORDER BY id").all(cursoId, periodoId, materiaId)
+      : this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? ORDER BY id").all(cursoId, periodoId);
     const compMap = {};
-    notas.forEach(n => {
-      const key = n.competencia || 'Sin competencia';
-      if (!compMap[key]) compMap[key] = { suma: 0, peso: 0 };
-      compMap[key].suma  += n.nota * n.peso;
-      compMap[key].peso  += n.peso;
-    });
+    for (const act of actividades) {
+      const calif = this.db.prepare(
+        "SELECT nota, distribucion_multi FROM calificaciones WHERE actividad_id=? AND estudiante_id=?"
+      ).get(act.id, estudianteId);
+      if (!calif || calif.nota === null) continue;
+      if (act.modo === 'multi') {
+        const comps = JSON.parse(act.competencias_multi || '[]');
+        const n = comps.length;
+        if (n === 0) continue;
+        const dist = calif.distribucion_multi ? JSON.parse(calif.distribucion_multi) : null;
+        const pesoComp = act.peso / n;
+        for (const c of comps) {
+          const pts = dist ? (dist[c] || 0) : (calif.nota / n);
+          if (!compMap[c]) compMap[c] = { suma: 0, peso: 0 };
+          compMap[c].suma += pts * act.peso;
+          compMap[c].peso += pesoComp;
+        }
+      } else {
+        const key = act.competencia || 'Sin competencia';
+        if (!compMap[key]) compMap[key] = { suma: 0, peso: 0 };
+        compMap[key].suma += calif.nota * act.peso;
+        compMap[key].peso += act.peso;
+      }
+    }
     const competencias = Object.entries(compMap).map(([nombre, v]) => ({
       nombre,
       promedio: v.peso > 0 ? Math.round(v.suma / v.peso) : null,
