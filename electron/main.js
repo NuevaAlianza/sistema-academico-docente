@@ -107,6 +107,7 @@ ipcMain.handle('delete-estudiante',     (_, id)      => db.deleteEstudiante(id))
   ipcMain.handle('set-calificacion-multi',       (_, d)          => db.setCalificacionMulti(d));
   ipcMain.handle('get-distribucion-multi',       (_, aId, eId)   => db.getDistribucionMulti(aId, eId));
   ipcMain.handle('get-resumen-competencias-multi',(_, cId, pId, mId) => db.getResumenCompetenciasMulti(cId, pId, mId));
+  ipcMain.handle('get-resumen-competencias-multi-por-estudiante',(_, eId, cId, pId, mId) => db.getResumenCompetenciasMultiPorEstudiante(eId, cId, pId, mId));
 
   ipcMain.handle('get-observaciones',           (_, eId)      => db.getObservaciones(eId));
   ipcMain.handle('get-observaciones-recientes', (_, eId, lim) => db.getObservacionesRecientes(eId, lim));

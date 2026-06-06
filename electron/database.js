@@ -386,6 +386,48 @@ deleteEstudiante(id) {
     return resultado;
   }
 
+  getResumenCompetenciasMultiPorEstudiante(estudianteId, cursoId, periodoId, materiaId) {
+    const COMPS = ['Comunicativa', 'Científica', 'Ética', 'Cívica'];
+    const q = materiaId
+      ? this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=? AND modo='multi' ORDER BY id")
+      : this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND modo='multi' ORDER BY id");
+    const actsMulti = materiaId ? q.all(cursoId, periodoId, materiaId) : q.all(cursoId, periodoId);
+
+    const resultado = {};
+    for (const comp of COMPS) {
+      let peso_evaluado = 0;
+      let suma_ponderada = 0;
+      let en_periodo = false;
+
+      for (const act of actsMulti) {
+        const comps = JSON.parse(act.competencias_multi || '[]');
+        if (!comps.includes(comp)) continue;
+        const n = comps.length;
+        const pesoComp = act.peso / n;
+        en_periodo = true;
+
+        const calif = this.db.prepare(
+          "SELECT nota, distribucion_multi FROM calificaciones WHERE actividad_id=? AND estudiante_id=?"
+        ).get(act.id, estudianteId);
+
+        if (calif && calif.nota !== null) {
+          peso_evaluado += pesoComp;
+          const dist = calif.distribucion_multi ? JSON.parse(calif.distribucion_multi) : null;
+          const pts = dist ? (dist[comp] || 0) : (calif.nota / n);
+          suma_ponderada += pts * act.peso;
+        }
+      }
+
+      if (!en_periodo) continue;
+      resultado[comp] = {
+        puntos_obtenidos: Math.round(suma_ponderada * 100) / 100,
+        peso_evaluado:    Math.round(peso_evaluado  * 100) / 100,
+        nota: peso_evaluado > 0 ? Math.round(suma_ponderada / peso_evaluado) : null,
+      };
+    }
+    return resultado;
+  }
+
   getObservaciones(estudianteId) { return this.db.prepare("SELECT * FROM observaciones WHERE estudiante_id=? ORDER BY fecha DESC, id DESC").all(estudianteId); }
   createObservacion(d) { return this.db.prepare("INSERT INTO observaciones (estudiante_id, fecha, texto, tipo) VALUES (?, ?, ?, ?)").run(d.estudianteId, d.fecha, d.texto, d.tipo || 'academico'); }
   deleteObservacion(id) { return this.db.prepare("DELETE FROM observaciones WHERE id=?").run(id); }

@@ -46,6 +46,9 @@ export default function Calificaciones({ anio, materia }) {
   const [titulosPer,      setTitulosPer]      = useState({})
   const [distribuciones,  setDistribuciones]  = useState({})
   const [formError,       setFormError]       = useState('')
+  const [tabResumen,      setTabResumen]      = useState('simple')
+  const [resumenMultiData,setResumenMultiData]= useState({})
+  const [cargandoMultiTab,setCargandoMultiTab]= useState(false)
 
   useEffect(() => {
     window.api.invoke('get-config').then(c => { if (c) setCfg(c) }).catch(() => {})
@@ -88,6 +91,8 @@ useEffect(() => {
     window.api.invoke('get-actividades', cursoSel.id, perSel.id, materiaId).then(acts => {
       setActividades(acts)
       setActSel(null)
+      setTabResumen('simple')
+      setResumenMultiData({})
       if (vista !== 'historial') setVista('resumen')
     })
   }, [cursoSel, perSel])
@@ -113,6 +118,25 @@ useEffect(() => {
       cargarHistorial()
     }
   }, [vista, cursoSel, anio])
+
+  useEffect(() => {
+    if (tabResumen !== 'multi' || vista !== 'resumen' || !cursoSel || !perSel || estudiantes.length === 0) return
+    let activo = true
+    setCargandoMultiTab(true)
+    Promise.all(
+      estudiantes.map(est =>
+        window.api.invoke('get-resumen-competencias-multi-por-estudiante', est.id, cursoSel.id, perSel.id, materiaId)
+          .then(data => ({ id: est.id, data }))
+      )
+    ).then(resultados => {
+      if (!activo) return
+      const obj = {}
+      resultados.forEach(r => { obj[r.id] = r.data })
+      setResumenMultiData(obj)
+      setCargandoMultiTab(false)
+    }).catch(() => { if (activo) setCargandoMultiTab(false) })
+    return () => { activo = false }
+  }, [tabResumen, vista, actividades, estudiantes])
 
   async function cargarHistorial() {
     setCargandoHist(true)
@@ -523,6 +547,7 @@ useEffect(() => {
   const semAmarillo    = Number(cfg.semaforo_amarillo   || 60)
   const minAprobatorio = Number(cfg.minimo_aprobatorio  || 70)
 
+  const hayActsMulti = actividades.some(a => a.modo === 'multi')
   const colPer = COLORES_PER[periodos.findIndex(p => p.id === perSel?.id)] || '#2563A8'
   const conNota = califs.filter(e => e.nota !== '')
   const prom = conNota.length > 0 ? Math.round(conNota.reduce((a, e) => a + Number(e.nota), 0) / conNota.length) : null
@@ -803,7 +828,166 @@ useEffect(() => {
         {/* ── VISTA RESUMEN POR COMPETENCIA ── */}
         {vista === 'resumen' && (
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-            {estudiantes.length === 0 ? (
+            {/* Sub-tabs Simple / Multi */}
+            {hayActsMulti && (
+              <div style={{ display:'flex', gap:4, background:'#fff', borderRadius:10, padding:4, border:'1px solid #DDE3ED', width:'fit-content' }}>
+                {[
+                  { k:'simple', label:'📊 Simple' },
+                  { k:'multi',  label:'🔀 Multi-competencia' },
+                ].map(t => (
+                  <button key={t.k} onClick={() => setTabResumen(t.k)} style={{
+                    padding:'6px 16px', borderRadius:8, border:'none', fontSize:12, fontWeight:700,
+                    background: tabResumen === t.k ? '#1B3A6B' : 'transparent',
+                    color:      tabResumen === t.k ? '#fff'    : '#888',
+                    cursor:'pointer', transition:'all .12s',
+                  }}>{t.label}</button>
+                ))}
+              </div>
+            )}
+
+            {/* ── SUB-TAB MULTI ── */}
+            {tabResumen === 'multi' && (() => {
+              if (cargandoMultiTab) return (
+                <div style={{ background:'#fff', borderRadius:12, padding:40, textAlign:'center', border:'1px solid #DDE3ED' }}>
+                  <div style={{ fontSize:36, marginBottom:10 }}>⏳</div>
+                  <p style={{ color:'#888', fontSize:13 }}>Calculando notas multi-competencia...</p>
+                </div>
+              )
+
+              const actsMulti = actividades.filter(a => a.modo === 'multi')
+              if (actsMulti.length === 0) return (
+                <div style={{ background:'#fff', borderRadius:12, padding:40, textAlign:'center', border:'1px solid #DDE3ED' }}>
+                  <div style={{ fontSize:36, marginBottom:10 }}>🔀</div>
+                  <p style={{ color:'#888', fontSize:13, marginBottom:8 }}>No hay actividades multi-competencia en este período.</p>
+                  <button onClick={() => { setForm({ ...VACIO, modo:'multi' }); setModalAct(true) }} style={{ padding:'8px 20px', background:'#2563A8', color:'#fff', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                    + Crear actividad multi
+                  </button>
+                </div>
+              )
+
+              // Determinar qué competencias tienen al menos una actividad multi en el período
+              const compsPresentes = COMPETENCIAS_MULTI.filter(c =>
+                actsMulti.some(a => {
+                  const cs = a.competencias_multi ? JSON.parse(a.competencias_multi) : []
+                  return cs.includes(c.key)
+                })
+              )
+
+              const datosEst = estudiantes.map(est => {
+                const mapa = resumenMultiData[est.id] || {}
+                const notas = compsPresentes.map(c => mapa[c.key]?.nota ?? null).filter(n => n !== null)
+                const prom = notas.length > 0 ? Math.round(notas.reduce((a, b) => a + b, 0) / notas.length) : null
+                return { est, mapa, prom }
+              })
+
+              const conProm   = datosEst.filter(d => d.prom !== null)
+              const verdes    = conProm.filter(d => d.prom >= semVerde).length
+              const amarillos = conProm.filter(d => d.prom >= minAprobatorio && d.prom < semVerde).length
+              const rojos     = conProm.filter(d => d.prom < minAprobatorio).length
+              const promGrupo = conProm.length > 0 ? Math.round(conProm.reduce((a, d) => a + d.prom, 0) / conProm.length) : null
+              const colGrupo  = promGrupo === null ? '#888' : promGrupo >= semVerde ? '#1A6B3A' : promGrupo >= minAprobatorio ? '#C84B00' : '#B71C1C'
+              const promsComp = {}
+              compsPresentes.forEach(c => {
+                const ns = datosEst.map(d => d.mapa[c.key]?.nota ?? null).filter(n => n !== null)
+                promsComp[c.key] = ns.length > 0 ? Math.round(ns.reduce((a, b) => a + b, 0) / ns.length) : null
+              })
+
+              return <>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:10 }}>
+                  {[
+                    { label:'Promedio del grupo', val: promGrupo ?? '—', color: colGrupo, big:true },
+                    { label:'🟢 Aprobados', val: verdes,    color:'#1A6B3A', sub:`≥ ${semVerde}` },
+                    { label:'🟡 En riesgo',  val: amarillos, color:'#C84B00', sub:`${minAprobatorio}–${semVerde-1}` },
+                    { label:'🔴 Reprobados', val: rojos,     color:'#B71C1C', sub:`< ${minAprobatorio}` },
+                    { label:'Sin notas aún', val: estudiantes.length - conProm.length, color:'#888', sub:'estudiantes' },
+                  ].map(s => (
+                    <div key={s.label} style={{ background:'#fff', borderRadius:12, padding:'14px 16px', border:'1px solid #DDE3ED', textAlign:'center', boxShadow:'0 2px 8px #0001' }}>
+                      <div style={{ fontSize: s.big ? 32 : 26, fontWeight:900, color:s.color }}>{s.val}</div>
+                      <div style={{ fontSize:11, color:'#888', marginTop:4 }}>{s.label}</div>
+                      {s.sub && <div style={{ fontSize:10, color:'#BBB', marginTop:2 }}>{s.sub}</div>}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001', overflow:'auto' }}>
+                  <table style={{ borderCollapse:'collapse', width:'100%', fontSize:12 }}>
+                    <thead>
+                      <tr style={{ background:'#1B3A6B' }}>
+                        <th style={{ padding:'10px 16px', color:'#9BBFED', textAlign:'left', fontWeight:700, position:'sticky', left:0, background:'#1B3A6B', zIndex:10, whiteSpace:'nowrap' }}>Estudiante</th>
+                        {compsPresentes.map(c => (
+                          <th key={c.key} style={{ padding:'10px 12px', color:'#9BBFED', textAlign:'center', fontWeight:700, minWidth:110 }}>
+                            <div>{c.icono}</div><div style={{ fontSize:10, marginTop:2 }}>{c.key}</div>
+                          </th>
+                        ))}
+                        <th style={{ padding:'10px 16px', color:'#FFD700', textAlign:'center', fontWeight:700, minWidth:120, borderLeft:'2px solid #2E5090' }}>PROMEDIO FINAL</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {datosEst.map(({ est, mapa, prom }, idx) => {
+                        const colP = prom === null ? '#888' : prom >= semVerde ? '#1A6B3A' : prom >= minAprobatorio ? '#C84B00' : '#B71C1C'
+                        const sem  = prom === null ? '⬜' : prom >= semVerde ? '🟢' : prom >= minAprobatorio ? '🟡' : '🔴'
+                        return (
+                          <tr key={est.id} style={{ background: idx%2===0 ? '#fff' : '#FAFBFD' }}>
+                            <td style={{ padding:'10px 16px', fontWeight:600, color:'#1B3A6B', position:'sticky', left:0, background:'inherit', borderRight:'1px solid #E8EDF5', whiteSpace:'nowrap' }}>
+                              <span style={{ color:'#999', marginRight:6, fontSize:11 }}>{String(est.numero_lista).padStart(2,'0')}</span>{est.nombre_completo}
+                            </td>
+                            {compsPresentes.map(c => {
+                              const nota = mapa[c.key]?.nota ?? null
+                              const col  = nota === null ? '#CCC' : nota >= semVerde ? '#1A6B3A' : nota >= minAprobatorio ? '#C84B00' : '#B71C1C'
+                              return (
+                                <td key={c.key} style={{ textAlign:'center', padding:'10px 8px' }}>
+                                  {nota !== null ? (
+                                    <div style={{ display:'inline-flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                                      <div style={{ fontSize:16, fontWeight:800, color:col }}>{nota}</div>
+                                      <div style={{ width:28, height:4, borderRadius:2, background: nota>=semVerde?'#D6EEE0':nota>=minAprobatorio?'#FDECD7':'#FDDFDF' }}>
+                                        <div style={{ height:'100%', borderRadius:2, background:col, width:Math.min(nota,100)+'%' }} />
+                                      </div>
+                                    </div>
+                                  ) : <span style={{ color:'#CCC', fontSize:13 }}>—</span>}
+                                </td>
+                              )
+                            })}
+                            <td style={{ textAlign:'center', padding:'10px 12px', borderLeft:'2px solid #EEF2F7' }}>
+                              {prom !== null ? (
+                                <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+                                  <span style={{ fontSize:16 }}>{sem}</span>
+                                  <div style={{ background:colP+'20', color:colP, padding:'5px 14px', borderRadius:20, fontWeight:900, fontSize:15 }}>{prom}</div>
+                                </div>
+                              ) : <span style={{ color:'#CCC' }}>—</span>}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background:'#EDF2FA', borderTop:'2px solid #1B3A6B' }}>
+                        <td style={{ padding:'10px 16px', fontWeight:800, color:'#1B3A6B', position:'sticky', left:0, background:'#EDF2FA', fontSize:12 }}>📊 Promedio del grupo</td>
+                        {compsPresentes.map(c => {
+                          const n   = promsComp[c.key]
+                          const col = n === null ? '#CCC' : n >= semVerde ? '#1A6B3A' : n >= minAprobatorio ? '#C84B00' : '#B71C1C'
+                          return (
+                            <td key={c.key} style={{ textAlign:'center', padding:'10px 8px' }}>
+                              {n !== null ? <span style={{ fontWeight:800, color:col, fontSize:14 }}>{n}</span> : <span style={{ color:'#CCC' }}>—</span>}
+                            </td>
+                          )
+                        })}
+                        <td style={{ textAlign:'center', padding:'10px 12px', borderLeft:'2px solid #D6E4F7' }}>
+                          {promGrupo !== null ? (
+                            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+                              <span style={{ fontSize:16 }}>{promGrupo>=semVerde?'🟢':promGrupo>=minAprobatorio?'🟡':'🔴'}</span>
+                              <span style={{ fontWeight:900, color:colGrupo, fontSize:16 }}>{promGrupo}</span>
+                            </div>
+                          ) : <span style={{ color:'#CCC' }}>—</span>}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            })()}
+
+            {/* ── SUB-TAB SIMPLE ── */}
+            {tabResumen === 'simple' && (estudiantes.length === 0 ? (
               <div style={{ background:'#fff', borderRadius:12, padding:40, textAlign:'center', border:'1px solid #DDE3ED' }}>
                 <div style={{ fontSize:36, marginBottom:10 }}>👨‍🎓</div>
                 <p style={{ color:'#888', fontSize:13 }}>Agrega estudiantes al curso primero</p>
@@ -919,7 +1103,7 @@ useEffect(() => {
                   </table>
                 </div>
               </>
-            })()}
+            })())}
           </div>
         )}
 
