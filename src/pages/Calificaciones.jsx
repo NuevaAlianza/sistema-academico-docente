@@ -325,6 +325,122 @@ useEffect(() => {
     toast2('📄 PDF generado')
   }
 
+  async function exportarPDFMulti() {
+    const actsMulti = actividades.filter(a => a.modo === 'multi')
+    if (!cursoSel || !perSel || actsMulti.length === 0) return
+    const cfg     = await window.api.invoke('get-config')
+    const centro  = cfg.centro_educativo || ''
+    const maestro = cfg.nombre_maestro   || ''
+    const tituloP = titulosPer[perSel.numero_orden] || perSel.titulo || ''
+    const fecha   = new Date().toLocaleDateString('es-DO', { day:'2-digit', month:'long', year:'numeric' })
+    const COL_M   = { Comunicativa:'#2563A8', Científica:'#00695C', Ética:'#5C2D91', Cívica:'#C84B00' }
+
+    // Resumen de competencias (notas del grupo)
+    const resumen = await window.api.invoke('get-resumen-competencias-multi', cursoSel.id, perSel.id, materiaId)
+
+    // Para cada actividad multi, construir tabla de distribuciones
+    const seccionesHTML = await Promise.all(actsMulti.map(async act => {
+      const comps = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
+      const califs = await window.api.invoke('get-calificaciones', act.id)
+      const mapaCalif = {}
+      califs.forEach(c => { mapaCalif[c.estudiante_id] = c })
+
+      const encabezados = `<th style="width:32px">#</th><th>Estudiante</th><th style="text-align:center;width:60px">Nota</th>${comps.map(c=>`<th style="text-align:center;width:70px;color:${COL_M[c]||'#333'}">${c.slice(0,3)}</th>`).join('')}<th style="text-align:center;width:60px">Suma</th>`
+
+      const filas = estudiantes.map((est, i) => {
+        const c = mapaCalif[est.id]
+        const nota = c ? c.nota : null
+        const dist = (c && c.distribucion_multi) ? JSON.parse(c.distribucion_multi) : {}
+        const nc = comps.length
+        const distRow = comps.map(comp => {
+          const v = dist[comp] !== undefined ? dist[comp] : (nota !== null ? Math.round(nota/nc*10)/10 : null)
+          return `<td style="text-align:center;font-weight:600;color:${COL_M[comp]||'#333'}">${v!==null?v:'—'}</td>`
+        }).join('')
+        const suma = comps.reduce((s, comp) => s + (dist[comp]||0), 0)
+        const sumaOk = nota === null || suma <= nota + 0.01
+        return `<tr style="background:${i%2===0?'#fff':'#FAFBFD'}">
+          <td style="color:#AAA;font-size:11px">${String(est.numero_lista).padStart(2,'0')}</td>
+          <td style="font-weight:600;color:#1B3A6B">${est.nombre_completo}</td>
+          <td style="text-align:center;font-weight:800;color:${nota!==null?(nota>=semVerde?'#1A6B3A':nota>=minAprobatorio?'#C84B00':'#B71C1C'):'#AAA'}">${nota!==null?nota:'—'}</td>
+          ${distRow}
+          <td style="text-align:center;font-weight:700;color:${sumaOk?'#1A6B3A':'#B71C1C'}">${nota!==null?Math.round(suma*10)/10:'—'}</td>
+        </tr>`
+      }).join('')
+
+      // Fila promedio grupo
+      const grupoNota = califs.filter(c=>c.nota!==null)
+      const promsNotas = grupoNota.map(c=>c.nota)
+      const promGrupo  = promsNotas.length>0 ? Math.round(promsNotas.reduce((a,b)=>a+b,0)/promsNotas.length) : null
+      const grupoComps = comps.map(comp => {
+        const vals = grupoNota.map(c => {
+          const d = c.distribucion_multi ? JSON.parse(c.distribucion_multi) : {}
+          return d[comp] !== undefined ? d[comp] : (c.nota !== null ? Math.round(c.nota/comps.length*10)/10 : 0)
+        })
+        return vals.length>0 ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10 : null
+      })
+      const pieFila = `<tr style="background:#EDF2FA;border-top:2px solid #1B3A6B;font-weight:700">
+        <td></td><td style="color:#1B3A6B">Promedio grupo</td>
+        <td style="text-align:center;color:${promGrupo!==null?(promGrupo>=semVerde?'#1A6B3A':promGrupo>=minAprobatorio?'#C84B00':'#B71C1C'):'#AAA'}">${promGrupo??'—'}</td>
+        ${grupoComps.map((v,i)=>`<td style="text-align:center;color:${COL_M[comps[i]]||'#333'}">${v??'—'}</td>`).join('')}
+        <td></td>
+      </tr>`
+
+      return `<div class="act-section">
+        <div class="act-title">${TIPO_ICONO[act.tipo]||'📝'} ${act.nombre}
+          <span class="act-meta">Peso: ${act.peso} · Competencias: ${comps.join(', ')}${act.fecha?' · '+act.fecha:''}</span>
+        </div>
+        <table><thead><tr>${encabezados}</tr></thead><tbody>${filas}${pieFila}</tbody></table>
+      </div>`
+    }))
+
+    // Sección resumen de competencias
+    const resumenHTML = resumen.length > 0 ? `
+      <div class="act-section">
+        <div class="act-title">Resumen por competencia</div>
+        <table><thead><tr><th>Competencia</th><th style="text-align:center">Actividades multi</th><th style="text-align:center">Peso evaluado</th><th style="text-align:center">Nota actual</th></tr></thead>
+        <tbody>${resumen.map(r=>`
+          <tr>
+            <td style="font-weight:700;color:${COL_M[r.competencia]||'#333'}">${r.competencia}</td>
+            <td style="text-align:center">${actsMulti.filter(a=>JSON.parse(a.competencias_multi||'[]').includes(r.competencia)).length}</td>
+            <td style="text-align:center">${r.peso_evaluado} pts</td>
+            <td style="text-align:center;font-weight:800;color:${r.nota!==null?(r.nota>=semVerde?'#1A6B3A':r.nota>=minAprobatorio?'#C84B00':'#B71C1C'):'#AAA'}">${r.nota??'—'}</td>
+          </tr>`).join('')}
+        </tbody></table>
+      </div>` : ''
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Registro Multi-competencia — ${cursoSel.nombre}</title>
+    <style>
+      body { font-family:'Segoe UI',sans-serif; margin:20px; color:#333; font-size:12px }
+      h1   { color:#1B3A6B; font-size:16px; margin:0 0 2px }
+      .sub { color:#888; font-size:11px; margin:0 0 16px }
+      .act-section { margin-bottom:22px }
+      .act-title { font-size:14px; font-weight:800; color:#1B3A6B; margin-bottom:6px; padding-bottom:4px; border-bottom:2px solid #1B3A6B; display:flex; align-items:center; gap:10px }
+      .act-meta   { font-size:11px; color:#888; font-weight:400 }
+      table { border-collapse:collapse; width:100%; font-size:12px }
+      thead th { background:#1B3A6B; color:#9BBFED; padding:6px 8px; font-size:11px; text-align:left }
+      tbody td  { padding:6px 8px; border-bottom:1px solid #F0F4FA }
+      .footer { margin-top:14px; font-size:10px; color:#AAA; border-top:1px solid #EEE; padding-top:6px; display:flex; justify-content:space-between }
+      @media print { @page { margin:10mm } .act-section { page-break-inside:avoid } }
+    </style></head><body>
+    <h1>🔀 Registro Multi-competencia — ${cursoSel.nombre}</h1>
+    <p class="sub">${perSel.nombre}${tituloP?' — '+tituloP:''} · ${materia?.nombre||'General'} · ${fecha}${centro?' · '+centro:''}</p>
+    ${seccionesHTML.join('')}
+    ${resumenHTML}
+    <div class="footer">
+      <span>${maestro||'Docente'}</span>
+      <span>${cursoSel.nombre} · ${perSel.nombre} · ${fecha}</span>
+    </div>
+    <script>window.onload=()=>window.print()</script>
+    </body></html>`
+
+    const win = window.open('', '_blank')
+    if (!win) { alert('No se pudo abrir la ventana de impresión.'); return }
+    win.document.write(html)
+    win.document.close()
+    toast2('📄 PDF Multi generado')
+  }
+
   function toast2(msg) { setToast(msg); setTimeout(() => setToast(null), 2500) }
 
   function abrirDuplicar() { setCursosDestino([]); setModalDuplicar(true) }
@@ -505,6 +621,9 @@ useEffect(() => {
               )}
               {estudiantes.length > 0 && actividades.length > 0 && (
                 <button onClick={exportarPDF} style={{ padding:'7px 16px', borderRadius:8, border:'1px solid #B71C1C', fontSize:12, fontWeight:700, background:'transparent', color:'#B71C1C', cursor:'pointer', marginLeft:4 }}>📄 Exportar PDF</button>
+              {actividades.some(a => a.modo === 'multi') && (
+                <button onClick={exportarPDFMulti} style={{ padding:'7px 16px', borderRadius:8, border:'1px solid #2563A8', fontSize:12, fontWeight:700, background:'transparent', color:'#2563A8', cursor:'pointer', marginLeft:4 }}>🔀 PDF Multi</button>
+              )}
               )}
             </>}
           </div>
