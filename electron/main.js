@@ -256,8 +256,9 @@ ipcMain.handle('backup-exportar-bd', async () => {
   });
   if (canceled || !filePath) return { cancelado: true };
   try {
-    const origen = path.join(app.getPath('userData'), 'sistema_docente.db');
-    fs.copyFileSync(origen, filePath);
+    // db.backup() hace copia atómica y consistente incluyendo el WAL completo.
+    // copyFileSync no incluye frames pendientes en el WAL.
+    await db.db.backup(filePath);
     return { ok: true, ruta: filePath };
   } catch(e) {
     return { ok: false, error: e.message };
@@ -280,6 +281,11 @@ ipcMain.handle('backup-importar-bd', async (_, rutaOrigen) => {
   try {
     const destino = path.join(app.getPath('userData'), 'sistema_docente.db');
     db.cerrar();
+    // Eliminar .wal y .shm ANTES de copiar el backup.
+    // Si quedan del estado anterior, SQLite los replay encima del archivo
+    // restaurado al reabrirlo, deshaciendo el restore por completo.
+    if (fs.existsSync(destino + '-wal')) fs.unlinkSync(destino + '-wal');
+    if (fs.existsSync(destino + '-shm')) fs.unlinkSync(destino + '-shm');
     fs.copyFileSync(rutaOrigen, destino);
     db.initialize();
     return { ok: true };
