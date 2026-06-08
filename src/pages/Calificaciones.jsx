@@ -373,6 +373,7 @@ useEffect(() => {
     // Para cada actividad multi, construir tabla de distribuciones
     const seccionesHTML = await Promise.all(actsMulti.map(async act => {
       const compsRaw = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
+      compsRaw.forEach(k => { if (!COMPETENCIAS.some(c => c.key === k)) console.warn('[PDF] competencia desconocida ignorada:', k, 'act', act.id) })
       const comps = COMPETENCIAS.filter(c => compsRaw.includes(c.key)).map(c => c.key)
       const califs = await window.api.invoke('get-calificaciones', act.id)
       const mapaCalif = {}
@@ -1155,6 +1156,7 @@ useEffect(() => {
                       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px,1fr))', gap:10 }}>
                         {actsMulti.map(act => {
                           const compsRaw = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
+                          compsRaw.forEach(k => { if (!COMPETENCIAS.some(c => c.key === k)) console.warn('[badges] competencia desconocida ignorada:', k, 'act', act.id) })
                           const comps = COMPETENCIAS.filter(c => compsRaw.includes(c.key)).map(c => c.key)
                           return (
                             <div key={act.id} onClick={() => abrirNotas(act)} style={{
@@ -1233,6 +1235,7 @@ useEffect(() => {
         {vista === 'notas' && actSel && (() => {
           const esMulti = actSel.modo === 'multi'
           const compsMultiRaw = esMulti && actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : []
+          compsMultiRaw.forEach(k => { if (!COMPETENCIAS.some(c => c.key === k)) console.warn('[notas] competencia desconocida ignorada:', k, 'act', actSel.id) })
           const compsMulti = COMPETENCIAS.filter(c => compsMultiRaw.includes(c.key)).map(c => c.key)
           const COL_MULTI = Object.fromEntries(COMPETENCIAS.map(c => [c.key, c.color]))
 
