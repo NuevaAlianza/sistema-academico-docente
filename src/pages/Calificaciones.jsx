@@ -372,7 +372,8 @@ useEffect(() => {
 
     // Para cada actividad multi, construir tabla de distribuciones
     const seccionesHTML = await Promise.all(actsMulti.map(async act => {
-      const comps = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
+      const compsRaw = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
+      const comps = COMPETENCIAS.filter(c => compsRaw.includes(c.key)).map(c => c.key)
       const califs = await window.api.invoke('get-calificaciones', act.id)
       const mapaCalif = {}
       califs.forEach(c => { mapaCalif[c.estudiante_id] = c })
@@ -1153,7 +1154,8 @@ useEffect(() => {
                       </div>
                       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px,1fr))', gap:10 }}>
                         {actsMulti.map(act => {
-                          const comps = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
+                          const compsRaw = act.competencias_multi ? JSON.parse(act.competencias_multi) : []
+                          const comps = COMPETENCIAS.filter(c => compsRaw.includes(c.key)).map(c => c.key)
                           return (
                             <div key={act.id} onClick={() => abrirNotas(act)} style={{
                               background:'#fff', borderRadius:10, padding:14, border:'1px solid #DDE3ED',
@@ -1230,7 +1232,8 @@ useEffect(() => {
         {/* ── VISTA NOTAS DE ACTIVIDAD ── */}
         {vista === 'notas' && actSel && (() => {
           const esMulti = actSel.modo === 'multi'
-          const compsMulti = esMulti && actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : []
+          const compsMultiRaw = esMulti && actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : []
+          const compsMulti = COMPETENCIAS.filter(c => compsMultiRaw.includes(c.key)).map(c => c.key)
           const COL_MULTI = Object.fromEntries(COMPETENCIAS.map(c => [c.key, c.color]))
 
           return (
