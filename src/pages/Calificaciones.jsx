@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 
 const COMPETENCIAS = [
-  { key:'Comunicativa',        color:'#2563A8', bg:'#D6E4F7', icono:'💬' },
-  { key:'Pensamiento Logico',  color:'#00695C', bg:'#D0EDE8', icono:'🧠' },
-  { key:'Civica',              color:'#5C2D91', bg:'#EDE0F7', icono:'🏛️' },
-  { key:'Tecnologica',         color:'#C84B00', bg:'#FDECD7', icono:'💻' },
+  { key:'Comunicativa',       label:'Comunicativa',       color:'#2563A8', bg:'#D6E4F7', icono:'💬' },
+  { key:'Pensamiento Logico', label:'Pensamiento Lógico', color:'#00695C', bg:'#D0EDE8', icono:'🧠' },
+  { key:'Civica',             label:'Cívica',             color:'#5C2D91', bg:'#EDE0F7', icono:'🏛️' },
+  { key:'Tecnologica',        label:'Tecnológica',        color:'#C84B00', bg:'#FDECD7', icono:'💻' },
 ]
 
 // Tab Multi usa la misma lista de competencias que Tab Simple
 const COMPETENCIAS_MULTI = COMPETENCIAS
+const COMP_INFO = Object.fromEntries(COMPETENCIAS.map(c => [c.key, c]))
 
 const TIPOS = ['Tarea','Exposicion','Proyecto','Examen','Participacion','Cuaderno']
 const TIPO_ICONO = { Tarea:'📝', Exposicion:'🎤', Proyecto:'🔬', Examen:'📄', Participacion:'✋', Cuaderno:'📓' }
@@ -221,6 +222,8 @@ useEffect(() => {
     const notaGlobal = Math.round(Object.values(dist).reduce((a, b) => a + b, 0) * 10) / 10
     setCalifs(prev => prev.map(e => e.id === estudianteId ? { ...e, nota: String(notaGlobal) } : e))
     setDistribuciones(prev => ({ ...prev, [estudianteId]: dist }))
+    const resumenDist = comps.map(k => `${COMP_INFO[k]?.icono}${COMP_INFO[k]?.label.slice(0,3)}=${dist[k]}`).join('  ')
+    toast2(`✓ Guardado: ${resumenDist}  →  nota ${notaGlobal}`)
   }
 
   function abrirEditar(act, e) {
@@ -379,16 +382,18 @@ useEffect(() => {
       const mapaCalif = {}
       califs.forEach(c => { mapaCalif[c.estudiante_id] = c })
 
-      const encabezados = `<th style="width:32px">#</th><th>Estudiante</th><th style="text-align:center;width:60px">Nota</th>${comps.map(c=>`<th style="text-align:center;width:70px;color:${COL_M[c]||'#333'}">${c.slice(0,3)}</th>`).join('')}<th style="text-align:center;width:60px">Suma</th>`
+      const encabezados = `<th style="width:32px">#</th><th>Estudiante</th><th style="text-align:center;width:60px">Nota</th>${COMPETENCIAS.map(c=>{const a=comps.includes(c.key);return`<th style="text-align:center;width:65px;color:${a?(COL_M[c.key]||'#333'):'#BBBBBB'};opacity:${a?1:.5}">${a?`${c.icono} ${c.label.slice(0,4)}`:'—'}</th>`}).join('')}<th style="text-align:center;width:60px">Suma</th>`
 
       const filas = estudiantes.map((est, i) => {
         const c = mapaCalif[est.id]
         const nota = c ? c.nota : null
         const dist = (c && c.distribucion_multi) ? JSON.parse(c.distribucion_multi) : {}
         const nc = comps.length
-        const distRow = comps.map(comp => {
-          const v = dist[comp] !== undefined ? dist[comp] : (nota !== null ? Math.round(nota/nc*10)/10 : null)
-          return `<td style="text-align:center;font-weight:600;color:${COL_M[comp]||'#333'}">${v!==null?v:'—'}</td>`
+        const distRow = COMPETENCIAS.map(ci => {
+          const activa = comps.includes(ci.key)
+          if (!activa) return `<td style="text-align:center;color:#CCCCCC">—</td>`
+          const v = dist[ci.key] !== undefined ? dist[ci.key] : (nota !== null ? Math.round(nota/nc*10)/10 : null)
+          return `<td style="text-align:center;font-weight:600;color:${COL_M[ci.key]||'#333'}">${v!==null?v:'—'}</td>`
         }).join('')
         const suma = comps.reduce((s, comp) => s + (dist[comp]||0), 0)
         const sumaOk = nota === null || suma <= nota + 0.01
@@ -405,17 +410,18 @@ useEffect(() => {
       const grupoNota = califs.filter(c=>c.nota!==null)
       const promsNotas = grupoNota.map(c=>c.nota)
       const promGrupo  = promsNotas.length>0 ? Math.round(promsNotas.reduce((a,b)=>a+b,0)/promsNotas.length) : null
-      const grupoComps = comps.map(comp => {
+      const grupoComps = COMPETENCIAS.map(ci => {
+        if (!comps.includes(ci.key)) return null
         const vals = grupoNota.map(c => {
           const d = c.distribucion_multi ? JSON.parse(c.distribucion_multi) : {}
-          return d[comp] !== undefined ? d[comp] : (c.nota !== null ? Math.round(c.nota/comps.length*10)/10 : 0)
+          return d[ci.key] !== undefined ? d[ci.key] : (c.nota !== null ? Math.round(c.nota/comps.length*10)/10 : 0)
         })
         return vals.length>0 ? Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10 : null
       })
       const pieFila = `<tr style="background:#EDF2FA;border-top:2px solid #1B3A6B;font-weight:700">
         <td></td><td style="color:#1B3A6B">Promedio grupo</td>
         <td style="text-align:center;color:${promGrupo!==null?(promGrupo>=semVerde?'#1A6B3A':promGrupo>=minAprobatorio?'#C84B00':'#B71C1C'):'#AAA'}">${promGrupo??'—'}</td>
-        ${grupoComps.map((v,i)=>`<td style="text-align:center;color:${COL_M[comps[i]]||'#333'}">${v??'—'}</td>`).join('')}
+        ${grupoComps.map((v,i)=>v===null?`<td style="text-align:center;color:#CCCCCC">—</td>`:`<td style="text-align:center;color:${COL_M[COMPETENCIAS[i].key]||'#333'}">${v??'—'}</td>`).join('')}
         <td></td>
       </tr>`
 
@@ -434,7 +440,7 @@ useEffect(() => {
         <table><thead><tr><th>Competencia</th><th style="text-align:center">Actividades multi</th><th style="text-align:center">Peso evaluado</th><th style="text-align:center">Nota actual</th></tr></thead>
         <tbody>${resumen.map(r=>`
           <tr>
-            <td style="font-weight:700;color:${COL_M[r.competencia]||'#333'}">${r.competencia}</td>
+            <td style="font-weight:700;color:${COL_M[r.competencia]||'#333'}">${COMP_INFO[r.competencia]?.icono??''} ${COMP_INFO[r.competencia]?.label??r.competencia}</td>
             <td style="text-align:center">${actsMulti.filter(a=>JSON.parse(a.competencias_multi||'[]').includes(r.competencia)).length}</td>
             <td style="text-align:center">${r.peso_evaluado} pts</td>
             <td style="text-align:center;font-weight:800;color:${r.nota!==null?(r.nota>=semVerde?'#1A6B3A':r.nota>=minAprobatorio?'#C84B00':'#B71C1C'):'#AAA'}">${r.nota??'—'}</td>
@@ -1318,15 +1324,22 @@ useEffect(() => {
                     <div style={{ padding:'10px 16px', background:'#EEF5FF', borderBottom:'1px solid #DDE3ED', fontSize:12, color:'#2563A8' }}>
                       🔀 Distribución por competencia (máx <strong>{techo}</strong> pts por comp) — La nota global se calcula automáticamente como suma.
                     </div>
-                    {/* Cabecera tabla */}
-                    <div style={{ display:'grid', gridTemplateColumns:`50px 1fr ${compsMulti.map(() => '110px').join(' ')} 100px`, background:'#1B3A6B', padding:'10px 16px', gap:8, alignItems:'center' }}>
+                    {/* Cabecera tabla — 4 cols fijas en orden canónico */}
+                    <div style={{ display:'grid', gridTemplateColumns:'50px 1fr 110px 110px 110px 110px 100px', background:'#1B3A6B', padding:'10px 16px', gap:8, alignItems:'center' }}>
                       {['#','Estudiante'].map(h => <div key={h} style={{ color:'#9BBFED', fontSize:11, fontWeight:700 }}>{h}</div>)}
-                      {compsMulti.map(c => (
-                        <div key={c} style={{ color: COL_MULTI[c]||'#9BBFED', fontSize:10, fontWeight:700, textAlign:'center' }}>
-                          <div>{c.slice(0,3)}</div>
-                          <div style={{ opacity:.6, fontSize:9 }}>/ {techo}</div>
-                        </div>
-                      ))}
+                      {COMPETENCIAS.map(c => {
+                        const activa = compsMulti.includes(c.key)
+                        return (
+                          <div key={c.key} style={{ textAlign:'center', opacity: activa ? 1 : 0.3 }}>
+                            <div style={{ fontSize:14 }}>{c.icono}</div>
+                            <div style={{ fontSize:11, fontWeight:700, color: activa ? c.color : '#9BBFED', whiteSpace:'nowrap' }}>{c.label}</div>
+                            {activa
+                              ? <div style={{ opacity:.6, fontSize:9, color:'#9BBFED' }}>máx {techo}</div>
+                              : <div style={{ fontSize:9, color:'#6B8CB4', fontStyle:'italic' }}>no aplica</div>
+                            }
+                          </div>
+                        )
+                      })}
                       <div style={{ color:'#FFD700', fontSize:10, fontWeight:700, textAlign:'center' }}>NOTA GLOBAL</div>
                     </div>
                     {califs.length === 0
@@ -1338,24 +1351,29 @@ useEffect(() => {
                         const hayExceso  = compsMulti.some(c => (dist[c]||0) > techo + 0.01)
                         const colNota    = hayExceso ? '#B71C1C' : colorNota(guardado ? notaGlobal : null)
                         return (
-                          <div key={e.id} style={{ display:'grid', gridTemplateColumns:`50px 1fr ${compsMulti.map(() => '110px').join(' ')} 100px`, padding:'8px 16px', gap:8, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
+                          <div key={e.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 110px 110px 110px 110px 100px', padding:'8px 16px', gap:8, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
                             <div style={{ fontSize:12, fontWeight:700, color:'#7A8FA8' }}>{String(e.numero_lista).padStart(2,'0')}</div>
                             <div style={{ fontSize:12, fontWeight:600, color:'#1B3A6B', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{e.nombre_completo}</div>
-                            {/* Inputs por competencia */}
-                            {compsMulti.map(comp => {
-                              const val    = dist[comp] ?? techo
-                              const excede = val > techo + 0.01
+                            {/* Inputs por competencia — 4 cols fijas en orden canónico */}
+                            {COMPETENCIAS.map(ci => {
+                              const activa = compsMulti.includes(ci.key)
+                              if (!activa) return (
+                                <div key={ci.key} style={{ display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                  <div style={{ width:72, height:30, border:'1.5px dashed #E5E9F0', borderRadius:8, background:'#F8FAFD', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'#D1D5DB' }}>—</div>
+                                </div>
+                              )
+                              const excede = (dist[ci.key]||0) > techo + 0.01
                               return (
-                                <div key={comp} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                                <div key={ci.key} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
                                   <input type="number" min="0" max={techo} step="0.1"
-                                    value={dist[comp] ?? ''}
-                                    onChange={ev => cambiarDistComp(e.id, comp, ev.target.value)}
-                                    onFocus={ev => { ev.target.style.borderColor = excede ? '#B71C1C' : (COL_MULTI[comp]||colPer) }}
-                                    onBlur={ev => { ev.target.style.borderColor = (excede ? '#B71C1C' : (COL_MULTI[comp]||'#DDE3ED'))+'60'; guardarDistComp(e.id) }}
+                                    value={dist[ci.key] ?? ''}
+                                    onChange={ev => cambiarDistComp(e.id, ci.key, ev.target.value)}
+                                    onFocus={ev => { ev.target.style.borderColor = excede ? '#B71C1C' : ci.color }}
+                                    onBlur={ev => { ev.target.style.borderColor = (excede ? '#B71C1C' : ci.color)+'60'; guardarDistComp(e.id) }}
                                     placeholder={String(techo)}
-                                    style={{ width:72, border:'1.5px solid '+(excede?'#B71C1C':(COL_MULTI[comp]||'#DDE3ED'))+'60', borderRadius:8, padding:'5px 8px', fontSize:12, fontWeight:600, textAlign:'center', outline:'none', background:'#fff', color: excede ? '#B71C1C' : (COL_MULTI[comp]||'#333') }}
+                                    style={{ width:72, border:'2px solid '+(excede?'#B71C1C':ci.color)+'60', borderRadius:8, padding:'5px 8px', fontSize:12, fontWeight:700, textAlign:'center', outline:'none', background: excede ? '#FFF0F0' : ci.bg+'80', color: excede ? '#B71C1C' : ci.color }}
                                   />
-                                  {excede && <div style={{ fontSize:9, color:'#B71C1C', whiteSpace:'nowrap' }}>máximo {techo}</div>}
+                                  {excede && <div style={{ fontSize:9, color:'#B71C1C', whiteSpace:'nowrap' }}>máx {techo}</div>}
                                 </div>
                               )
                             })}
@@ -1473,7 +1491,7 @@ useEffect(() => {
                           </div>
                           <div>
                             <span style={{ fontSize:14, marginRight:4 }}>{c.icono}</span>
-                            <span style={{ fontSize:12, fontWeight:700, color:sel?c.color:'#555' }}>{c.key}</span>
+                            <span style={{ fontSize:12, fontWeight:700, color:sel?c.color:'#555' }}>{c.label}</span>
                           </div>
                         </div>
                       )
