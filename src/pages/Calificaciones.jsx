@@ -8,13 +8,8 @@ const COMPETENCIAS = [
   { key:'Tecnologica',         color:'#C84B00', bg:'#FDECD7', icono:'💻' },
 ]
 
-// Competencias disponibles en modo multi-competencia
-const COMPETENCIAS_MULTI = [
-  { key:'Comunicativa', color:'#2563A8', bg:'#D6E4F7', icono:'💬' },
-  { key:'Científica',   color:'#00695C', bg:'#D0EDE8', icono:'🔬' },
-  { key:'Ética',        color:'#5C2D91', bg:'#EDE0F7', icono:'⚖️' },
-  { key:'Cívica',       color:'#C84B00', bg:'#FDECD7', icono:'🏛️' },
-]
+// Tab Multi usa la misma lista de competencias que Tab Simple
+const COMPETENCIAS_MULTI = COMPETENCIAS
 
 const TIPOS = ['Tarea','Exposicion','Proyecto','Examen','Participacion','Cuaderno']
 const TIPO_ICONO = { Tarea:'📝', Exposicion:'🎤', Proyecto:'🔬', Examen:'📄', Participacion:'✋', Cuaderno:'📓' }
@@ -370,7 +365,7 @@ useEffect(() => {
     const maestro = cfg.nombre_maestro   || ''
     const tituloP = titulosPer[perSel.numero_orden] || perSel.titulo || ''
     const fecha   = new Date().toLocaleDateString('es-DO', { day:'2-digit', month:'long', year:'numeric' })
-    const COL_M   = { Comunicativa:'#2563A8', Científica:'#00695C', Ética:'#5C2D91', Cívica:'#C84B00' }
+    const COL_M   = Object.fromEntries(COMPETENCIAS.map(c => [c.key, c.color]))
 
     // Resumen de competencias (notas del grupo)
     const resumen = await window.api.invoke('get-resumen-competencias-multi', cursoSel.id, perSel.id, materiaId)
@@ -1100,8 +1095,8 @@ useEffect(() => {
           const actsMulti  = actividades.filter(a => a.modo === 'multi')
 
           // Franja: peso acumulado por competencia en el período
-          const COL_MULTI = { Comunicativa:'#2563A8', Científica:'#00695C', Ética:'#5C2D91', Cívica:'#C84B00' }
-          const franjaComps = COMPETENCIAS_MULTI.map(comp => {
+          const COL_MULTI = Object.fromEntries(COMPETENCIAS.map(c => [c.key, c.color]))
+          const franjaComps = COMPETENCIAS.map(comp => {
             const pesoS = actsSimple.filter(a => a.competencia === comp.key).reduce((s, a) => s + a.peso, 0)
             const pesoM = actsMulti.reduce((s, a) => {
               const cs = a.competencias_multi ? JSON.parse(a.competencias_multi) : []
@@ -1236,7 +1231,7 @@ useEffect(() => {
         {vista === 'notas' && actSel && (() => {
           const esMulti = actSel.modo === 'multi'
           const compsMulti = esMulti && actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : []
-          const COL_MULTI = { Comunicativa:'#2563A8', Científica:'#00695C', Ética:'#5C2D91', Cívica:'#C84B00' }
+          const COL_MULTI = Object.fromEntries(COMPETENCIAS.map(c => [c.key, c.color]))
 
           return (
             <div>

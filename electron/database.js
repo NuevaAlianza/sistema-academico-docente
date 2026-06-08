@@ -378,7 +378,7 @@ deleteEstudiante(id) {
   // Fórmula: nota_comp_en_act = (dist[comp] / techo) × 100
   //          nota_comp_periodo = Σ(nota_comp_en_act × peso_unit) / Σ(peso_unit)
   getResumenCompetenciasMulti(cursoId, periodoId, materiaId) {
-    const COMPS = ['Comunicativa', 'Científica', 'Ética', 'Cívica'];
+    const COMPS = ['Comunicativa', 'Pensamiento Logico', 'Civica', 'Tecnologica'];
     const q = materiaId
       ? this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=? AND modo='multi' ORDER BY id")
       : this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND modo='multi' ORDER BY id");
@@ -423,7 +423,7 @@ deleteEstudiante(id) {
   }
 
   getResumenCompetenciasMultiPorEstudiante(estudianteId, cursoId, periodoId, materiaId) {
-    const COMPS = ['Comunicativa', 'Científica', 'Ética', 'Cívica'];
+    const COMPS = ['Comunicativa', 'Pensamiento Logico', 'Civica', 'Tecnologica'];
     const q = materiaId
       ? this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=? AND modo='multi' ORDER BY id")
       : this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND modo='multi' ORDER BY id");
