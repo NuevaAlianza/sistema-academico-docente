@@ -1,5 +1,42 @@
 # Changelog — Sistema Académico Docente
 
+## [1.5.0] — 2026-06-08
+
+### Added (Nuevo)
+- Modo de calificación multi-competencia: una actividad puede distribuir puntos en hasta 4 competencias con techo automático (100 ÷ n_comps)
+- Pestañas separadas Simple / Multi en pantalla de Calificaciones
+- Vista de distribución con 4 slots fijos (Com, PL, Cív, Tec) y placeholder "—" para competencias no aplicables
+- Toast de confirmación al guardar distribución multi
+- Franja de peso por competencia en tiempo real
+- PDF de período multi-competencia con desglose por actividad
+- Re-distribución automática al editar competencias de actividad con calificaciones ya guardadas
+- Scripts de mantenimiento en /scripts con README
+
+### Changed (Cambiado)
+- Flujo de captura multi: maestro ingresa puntos por competencia y la nota global se calcula automáticamente (en lugar de pedir nota global primero)
+- Encabezados de competencias unificados entre tab Simple y Multi
+- Orden canónico fijo de competencias en toda la app: Comunicativa → Pensamiento Lógico → Cívica → Tecnológica
+- Nombres de competencias unificados (migración automática de nombres antiguos como Científica/Ética a los canónicos)
+
+### Fixed (Corregido)
+- Bug crítico: una competencia podía exceder 100 cuando la distribución era desbalanceada
+- Bug crítico: backup de BD no incluía datos del WAL (transacciones recientes podían perderse)
+- Bug crítico: restore de BD no limpiaba archivos .wal/.shm, lo que causaba que el restore se deshiciera al re-abrir la BD
+- Reporte individual no filtraba notas por materia (BUG-08 de auditoría)
+- Clonar temas no copiaba contenido_texto ni meta_json (BUG-06)
+- Semáforo con umbrales inconsistentes entre módulos (BUG-02)
+- window.open podía retornar null en producción sin verificación (BUG-10)
+- Distribución equitativa con error de float (suma podía exceder la nota por 0.2)
+- Inputs de competencias no respetaban el orden canónico al renderizar
+- Competencias desconocidas se silenciaban sin advertencia
+
+### Internal (Interno)
+- Scripts de diagnóstico y migración archivados en /scripts/archivo
+- Documentación de scripts en /scripts/README.md
+- PRUEBAS-v1.5.0.md con checklist de pruebas manuales
+
+---
+
 ## v1.4.2 — 2026-06-06
 
 ### Modo Multi-competencia
