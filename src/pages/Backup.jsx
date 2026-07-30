@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useModalTransition } from '../hooks/useModalTransition'
 
 function Seccion({ titulo, icono, children }) {
   return (
@@ -36,6 +37,7 @@ export default function Backup() {
   const [toast,    setToast]    = useState(null)
   const [confirm,  setConfirm]  = useState(null) // 'importar' | 'reset'
   const [archivoImportar, setArchivoImportar] = useState(null)
+  const confirmT = useModalTransition(confirm)
 
   function toast2(msg, error) {
     setToast({ msg, error })
@@ -184,9 +186,9 @@ export default function Backup() {
       </Seccion>
 
       {/* MODAL CONFIRMACIÓN IMPORTAR */}
-      {confirm === 'importar' && (
-        <div style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:32, width:420, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
+      {confirmT?.value === 'importar' && (
+        <div className="modal-backdrop" data-closing={confirmT.closing} style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}>
+          <div className="modal-content" data-closing={confirmT.closing} style={{ background:'#fff', borderRadius:14, padding:32, width:420, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
             <div style={{ fontSize:40, marginBottom:12 }}>📥</div>
             <h3 style={{ color:'#1B3A6B', marginBottom:8, fontSize:16 }}>¿Restaurar esta copia?</h3>
             <p style={{ color:'#555', fontSize:13, marginBottom:6 }}>
@@ -211,9 +213,9 @@ export default function Backup() {
       )}
 
       {/* MODAL CONFIRMACIÓN RESET */}
-      {confirm === 'reset' && (
-        <div style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:32, width:420, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
+      {confirmT?.value === 'reset' && (
+        <div className="modal-backdrop" data-closing={confirmT.closing} style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}>
+          <div className="modal-content" data-closing={confirmT.closing} style={{ background:'#fff', borderRadius:14, padding:32, width:420, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
             <div style={{ fontSize:40, marginBottom:12 }}>🚨</div>
             <h3 style={{ color:'#B71C1C', marginBottom:8, fontSize:16 }}>¿Borrar TODOS los datos?</h3>
             <p style={{ color:'#555', fontSize:13, marginBottom:6 }}>

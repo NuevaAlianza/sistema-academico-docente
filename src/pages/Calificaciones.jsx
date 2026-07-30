@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useModalTransition } from '../hooks/useModalTransition'
 
 const COMPETENCIAS = [
   { key:'Comunicativa',       label:'Comunicativa',       color:'#2563A8', bg:'#D6E4F7', icono:'💬' },
@@ -35,7 +36,8 @@ export default function Calificaciones({ anio, materia }) {
   const [modalDuplicar, setModalDuplicar] = useState(false)
   const [cursosDestino, setCursosDestino] = useState([])
   const [vista,         setVista]         = useState('resumen')
-  const [toast,       setToast]       = useState(null)
+  const [toast,       setToast]       = useState(null) // { msg, leaving }
+  const toastGen = useRef(0)
   const [confirm,     setConfirm]     = useState(null)
   const [historial,       setHistorial]       = useState([])
   const [cargandoHist,    setCargandoHist]    = useState(false)
@@ -45,6 +47,9 @@ export default function Calificaciones({ anio, materia }) {
   const [tabResumen,      setTabResumen]      = useState('simple')
   const [resumenMultiData,setResumenMultiData]= useState({})
   const [cargandoMultiTab,setCargandoMultiTab]= useState(false)
+  const modalActT       = useModalTransition(modalAct)
+  const modalDuplicarT  = useModalTransition(modalDuplicar)
+  const confirmT        = useModalTransition(confirm)
 
   useEffect(() => {
     window.api.invoke('get-config').then(c => { if (c) setCfg(c) }).catch(() => {})
@@ -481,7 +486,12 @@ useEffect(() => {
     toast2('📄 PDF Multi generado')
   }
 
-  function toast2(msg) { setToast(msg); setTimeout(() => setToast(null), 2500) }
+  function toast2(msg) {
+    const gen = ++toastGen.current
+    setToast({ msg, leaving:false })
+    setTimeout(() => { if (toastGen.current===gen) setToast(t => t && ({ ...t, leaving:true })) }, 2300)
+    setTimeout(() => { if (toastGen.current===gen) setToast(null) }, 2500)
+  }
 
   function abrirDuplicar() { setCursosDestino([]); setModalDuplicar(true) }
 
@@ -501,9 +511,11 @@ useEffect(() => {
   }
 
   function calcularCompetencias(estudianteId, todasCalifs) {
+    // Solo actividades modo='simple': las modo='multi' se califican por
+    // distribucion_multi y se resumen aparte (tab "Multi" / getResumenCompetenciasMultiPorEstudiante).
     const resultado = {}
     COMPETENCIAS.forEach(comp => {
-      const actsComp = actividades.filter(a => a.competencia === comp.key)
+      const actsComp = actividades.filter(a => a.modo !== 'multi' && a.competencia === comp.key)
       if (actsComp.length === 0) { resultado[comp.key] = null; return }
       let pesoTotal = 0, sumaXPeso = 0, tieneNota = false
       actsComp.forEach(act => {
@@ -542,8 +554,9 @@ useEffect(() => {
   const conNota = califs.filter(e => e.nota !== '')
   const prom = conNota.length > 0 ? Math.round(conNota.reduce((a, e) => a + Number(e.nota), 0) / conNota.length) : null
   const colorProm = prom === null ? '#888' : prom >= semVerde ? '#1A6B3A' : prom >= minAprobatorio ? '#C84B00' : '#B71C1C'
+  // Igual que calcularCompetencias(): las modo='multi' se resumen aparte vía distribucion_multi.
   const actsPorComp = {}
-  COMPETENCIAS.forEach(c => { actsPorComp[c.key] = actividades.filter(a => a.competencia === c.key) })
+  COMPETENCIAS.forEach(c => { actsPorComp[c.key] = actividades.filter(a => a.modo !== 'multi' && a.competencia === c.key) })
 
   function colorNota(n) {
     if (n === null) return '#CCC'
@@ -864,9 +877,8 @@ useEffect(() => {
               )
 
               const datosEst = estudiantes.map(est => {
-                const mapa = resumenMultiData[est.id] || {}
-                const notas = compsPresentes.map(c => mapa[c.key]?.nota ?? null).filter(n => n !== null)
-                const prom = notas.length > 0 ? Math.round(notas.reduce((a, b) => a + b, 0) / notas.length) : null
+                const mapa = resumenMultiData[est.id]?.competencias || {}
+                const prom = resumenMultiData[est.id]?.promedio ?? null
                 return { est, mapa, prom }
               })
 
@@ -874,6 +886,7 @@ useEffect(() => {
               const verdes    = conProm.filter(d => d.prom >= semVerde).length
               const amarillos = conProm.filter(d => d.prom >= minAprobatorio && d.prom < semVerde).length
               const rojos     = conProm.filter(d => d.prom < minAprobatorio).length
+              // Promedio del grupo: promedio simple de las notas finales (ya ponderadas) de cada estudiante.
               const promGrupo = conProm.length > 0 ? Math.round(conProm.reduce((a, d) => a + d.prom, 0) / conProm.length) : null
               const colGrupo  = promGrupo === null ? '#888' : promGrupo >= semVerde ? '#1A6B3A' : promGrupo >= minAprobatorio ? '#C84B00' : '#B71C1C'
               const promsComp = {}
@@ -1400,7 +1413,7 @@ useEffect(() => {
       </div>
 
       {/* MODAL NUEVA ACTIVIDAD */}
-      {modalAct && (() => {
+      {modalActT && (() => {
         const pesoUsado = actividades.filter(a => !editandoId || a.id !== editandoId).reduce((s, a) => s + a.peso, 0)
         const pesoIngresado = Number(form.peso) || 0
         const pesoDisponible = Math.max(0, 100 - pesoUsado)
@@ -1414,9 +1427,9 @@ useEffect(() => {
             : [...p.competencias_multi, key],
         }))
         return (
-          <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+          <div className="modal-backdrop" data-closing={modalActT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
             onClick={e => { if (e.target===e.currentTarget) { setModalAct(false); setFormError('') } }}>
-            <div style={{ background:'#fff', borderRadius:14, padding:28, width:500, boxShadow:'0 16px 48px #0004', maxHeight:'90vh', overflowY:'auto' }}>
+            <div className="modal-content" data-closing={modalActT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:500, boxShadow:'0 16px 48px #0004', maxHeight:'90vh', overflowY:'auto' }}>
               <h2 style={{ color:'#1B3A6B', marginBottom:16, fontSize:17 }}>{editandoId?'✏️ Editar Actividad':'+ Nueva Actividad'}</h2>
 
               {/* Nombre */}
@@ -1545,10 +1558,10 @@ useEffect(() => {
       })()}
 
       {/* MODAL DUPLICAR */}
-      {modalDuplicar && (
-        <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+      {modalDuplicarT && (
+        <div className="modal-backdrop" data-closing={modalDuplicarT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
           onClick={e => { if (e.target===e.currentTarget) setModalDuplicar(false) }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:28, width:440, boxShadow:'0 16px 48px #0004' }}>
+          <div className="modal-content" data-closing={modalDuplicarT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:440, boxShadow:'0 16px 48px #0004' }}>
             <h2 style={{ color:'#1B3A6B', marginBottom:6, fontSize:17 }}>📋 Duplicar actividades</h2>
             <p style={{ color:'#888', fontSize:12, marginBottom:20 }}>
               Se copiarán las <strong>{actividades.length} actividades</strong> del <strong>{perSel?.nombre}</strong> de <strong style={{color:cursoSel?.color}}>{cursoSel?.nombre}</strong> a los cursos que selecciones.
@@ -1590,12 +1603,12 @@ useEffect(() => {
       )}
 
       {/* MODAL CONFIRMAR ELIMINAR */}
-      {confirm && (
-        <div style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:32, width:400, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
+      {confirmT && (
+        <div className="modal-backdrop" data-closing={confirmT.closing} style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}>
+          <div className="modal-content" data-closing={confirmT.closing} style={{ background:'#fff', borderRadius:14, padding:32, width:400, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
             <div style={{ fontSize:40, marginBottom:12 }}>🗑️</div>
             <h3 style={{ color:'#1B3A6B', marginBottom:8, fontSize:16 }}>¿Eliminar esta actividad?</h3>
-            <p style={{ color:'#555', fontSize:13, marginBottom:6 }}>Vas a eliminar <strong style={{ color:'#B71C1C' }}>{confirm.nombre}</strong></p>
+            <p style={{ color:'#555', fontSize:13, marginBottom:6 }}>Vas a eliminar <strong style={{ color:'#B71C1C' }}>{confirmT.value.nombre}</strong></p>
             <p style={{ color:'#AAB4C4', fontSize:12, marginBottom:24 }}>Se borrarán también todas las calificaciones. Esta acción no se puede deshacer.</p>
             <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
               <button onClick={() => setConfirm(null)} style={{ padding:'10px 28px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555', fontWeight:600 }}>Cancelar</button>
@@ -1606,7 +1619,7 @@ useEffect(() => {
       )}
 
       {toast && (
-        <div style={{ position:'fixed', bottom:24, right:24, background:'#1A6B3A', color:'#fff', padding:'10px 20px', borderRadius:10, fontSize:13, fontWeight:600, boxShadow:'0 4px 16px #0003', zIndex:999 }}>{toast}</div>
+        <div className="toast" data-leaving={toast.leaving}>{toast.msg}</div>
       )}
     </div>
   )

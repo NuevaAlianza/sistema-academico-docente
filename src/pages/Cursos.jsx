@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useModalTransition } from '../hooks/useModalTransition'
 
 const COLORES = ['#2563A8','#00695C','#5C2D91','#C84B00','#1A6B3A','#B71C1C','#7A5C00','#01579B']
 const VACIO = { nombre:'', grado:'', seccion:'', descripcion:'', color:'#2563A8' }
@@ -12,6 +13,8 @@ export default function Cursos({ anio }) {
   const [toast,    setToast]    = useState(null)
   const [confirm,  setConfirm]  = useState(null) // { nombre, id }
   const nav = useNavigate()
+  const modalT   = useModalTransition(modal)
+  const confirmT = useModalTransition(confirm)
 
   useEffect(() => { if (anio) cargar() }, [anio])
 
@@ -27,6 +30,8 @@ export default function Cursos({ anio }) {
   async function guardar() {
     if (!form.nombre.trim()) { alert('El nombre del curso es obligatorio.'); return }
     if (!anio || !anio.id)   { alert('No hay un año escolar activo. Recarga la aplicación.'); return }
+    const duplicado = cursos.some(c => c.nombre.trim() === form.nombre.trim() && c.id !== editId)
+    if (duplicado) { alert('Ya existe un curso activo con ese nombre exacto. Elegí un nombre distinto.'); return }
     if (editId) {
       await window.api.invoke('update-curso', editId, { ...form, anioId: anio.id })
       toast2('✅ Curso actualizado')
@@ -55,7 +60,7 @@ export default function Cursos({ anio }) {
   return (
     <div>
       <div style={{ display:'flex', alignItems:'center', marginBottom:20 }}>
-        <h1 style={{ fontSize:20, color:'#1B3A6B' }}>📚 Cursos / Materias TEST</h1>
+        <h1 style={{ fontSize:20, color:'#1B3A6B' }}>📚 Cursos / Materias</h1>
         <div style={{ flex:1 }} />
         <button onClick={abrirNuevo} style={{ padding:'9px 20px', background:'#1B3A6B', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>
           + Nuevo Curso
@@ -108,10 +113,10 @@ export default function Cursos({ anio }) {
       )}
 
       {/* MODAL CREAR / EDITAR */}
-      {modal && (
-        <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+      {modalT && (
+        <div className="modal-backdrop" data-closing={modalT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
           onClick={e => { if (e.target === e.currentTarget) setModal(false) }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:28, width:460, boxShadow:'0 16px 48px #0004' }}>
+          <div className="modal-content" data-closing={modalT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:460, boxShadow:'0 16px 48px #0004' }}>
             <h2 style={{ color:'#1B3A6B', marginBottom:20, fontSize:17 }}>{editId ? '✏️ Editar Curso' : '+ Nuevo Curso'}</h2>
             {[
               { label:'Nombre del curso *', key:'nombre',      placeholder:'Ej: FIHR 2do B' },
@@ -144,13 +149,13 @@ export default function Cursos({ anio }) {
       )}
 
       {/* MODAL CONFIRMACIÓN ELIMINAR */}
-      {confirm && (
-        <div style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:32, width:380, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
+      {confirmT && (
+        <div className="modal-backdrop" data-closing={confirmT.closing} style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}>
+          <div className="modal-content" data-closing={confirmT.closing} style={{ background:'#fff', borderRadius:14, padding:32, width:380, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
             <div style={{ fontSize:40, marginBottom:12 }}>🗑️</div>
             <h3 style={{ color:'#1B3A6B', marginBottom:8, fontSize:16 }}>¿Archivar este curso?</h3>
             <p style={{ color:'#555', fontSize:13, marginBottom:6 }}>
-              Vas a archivar <strong style={{ color:'#B71C1C' }}>{confirm.nombre}</strong>
+              Vas a archivar <strong style={{ color:'#B71C1C' }}>{confirmT.value.nombre}</strong>
             </p>
             <p style={{ color:'#AAB4C4', fontSize:12, marginBottom:24 }}>
               El curso no se elimina permanentemente — queda archivado y puedes recuperarlo si es necesario.

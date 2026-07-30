@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 export default function Dashboard({ anio, materia }) {
@@ -11,11 +11,12 @@ export default function Dashboard({ anio, materia }) {
   const [cfg,           setCfg]           = useState({})
   const [cargando,      setCargando]      = useState(true)
   const nav = useNavigate()
+  const semRequestId = useRef(0)
 
   useEffect(() => {
     if (!anio) return
     Promise.all([
-      window.api.invoke('get-stats', anio.id),
+      window.api.invoke('get-stats', anio.id, materiaId),
       window.api.invoke('get-config'),
       window.api.invoke('get-periodos', anio.id),
     ]).then(([s, c, ps]) => {
@@ -28,10 +29,12 @@ export default function Dashboard({ anio, materia }) {
   useEffect(() => {
     if (!anio || !periodoSel) return
     setCargando(true)
+    const requestId = ++semRequestId.current
     Promise.all([
-      window.api.invoke('get-estudiantes-riesgo', anio.id, periodoSel.id),
-      window.api.invoke('get-semaforo-cursos', anio.id, periodoSel.id),
+      window.api.invoke('get-estudiantes-riesgo', anio.id, periodoSel.id, materiaId),
+      window.api.invoke('get-semaforo-cursos', anio.id, periodoSel.id, materiaId),
     ]).then(([r, s]) => {
+      if (requestId !== semRequestId.current) return // respuesta de un período viejo, se descarta
       setRiesgo(r); setSemaforo(s); setCargando(false)
     })
   }, [anio, periodoSel, materia])
@@ -46,7 +49,7 @@ export default function Dashboard({ anio, materia }) {
   function semB(n) { return n===null?'#F4F4F4':n>=semVerde?'#D6EEE0':n>=semAmarillo?'#FDECD7':'#FDDFDF' }
 
   const Pill = ({ n }) => n!==null
-    ? <span style={{ background:semB(n), color:semC(n), padding:'2px 10px', borderRadius:20, fontSize:12, fontWeight:800 }}>{n}</span>
+    ? <span style={{ background:semB(n), color:semC(n), padding:'2px 10px', borderRadius:20, fontSize:12, fontWeight:800, transition:'background-color 200ms ease, color 200ms ease' }}>{n}</span>
     : <span style={{ color:'#CCC', fontSize:12 }}>—</span>
 
   const selectorPeriodo = (
@@ -109,11 +112,14 @@ export default function Dashboard({ anio, materia }) {
           </div>
 
           {cargando ? (
-            <div style={{ padding:24, textAlign:'center', color:'#AAA', fontSize:13 }}>⏳ Calculando...</div>
+            <div style={{ padding:24, textAlign:'center', color:'#AAA', fontSize:13 }}>
+              <div className="spinner" style={{ margin:'0 auto 8px' }} />
+              Calculando...
+            </div>
           ) : semaforo.length === 0 ? (
-            <div style={{ padding:24, textAlign:'center', color:'#AAA', fontSize:13 }}>Sin calificaciones en {periodoSel?.nombre}</div>
+            <div className="content-fade-in" style={{ padding:24, textAlign:'center', color:'#AAA', fontSize:13 }}>Sin calificaciones en {periodoSel?.nombre}</div>
           ) : (
-            <div style={{ maxHeight:340, overflowY:'auto' }}>
+            <div className="content-fade-in" style={{ maxHeight:340, overflowY:'auto' }}>
               {semaforo.map((curso, idx) => {
                 const total   = curso.verde + curso.amarillo + curso.rojo + curso.sinNota
                 const conNota = curso.verde + curso.amarillo + curso.rojo
@@ -135,10 +141,10 @@ export default function Dashboard({ anio, materia }) {
                       </div>
                     </div>
                     {conNota > 0 ? (
-                      <div style={{ display:'flex', borderRadius:4, overflow:'hidden', height:8 }}>
-                        {pV>0 && <div style={{ width:pV+'%', background:'#1A6B3A' }}/>}
-                        {pA>0 && <div style={{ width:pA+'%', background:'#C84B00' }}/>}
-                        {pR>0 && <div style={{ width:pR+'%', background:'#B71C1C' }}/>}
+                      <div style={{ position:'relative', borderRadius:4, overflow:'hidden', height:8, background:'#F0F4FA' }}>
+                        <div className="sem-bar-segment" style={{ background:'#1A6B3A', clipPath:`inset(0 ${100-pV}% 0 0)` }}/>
+                        <div className="sem-bar-segment" style={{ background:'#C84B00', clipPath:`inset(0 ${100-pV-pA}% 0 ${pV}%)` }}/>
+                        <div className="sem-bar-segment" style={{ background:'#B71C1C', clipPath:`inset(0 0 0 ${pV+pA}%)` }}/>
                       </div>
                     ) : (
                       <div style={{ fontSize:11, color:'#CCC' }}>Sin notas aún</div>
@@ -174,15 +180,18 @@ export default function Dashboard({ anio, materia }) {
           </div>
 
           {cargando ? (
-            <div style={{ padding:24, textAlign:'center', color:'#AAA', fontSize:13 }}>⏳ Calculando...</div>
+            <div style={{ padding:24, textAlign:'center', color:'#AAA', fontSize:13 }}>
+              <div className="spinner" style={{ margin:'0 auto 8px' }} />
+              Calculando...
+            </div>
           ) : enRiesgo === 0 ? (
-            <div style={{ padding:32, textAlign:'center' }}>
+            <div className="content-fade-in" style={{ padding:32, textAlign:'center' }}>
               <div style={{ fontSize:32, marginBottom:8 }}>🎉</div>
               <div style={{ fontWeight:700, color:'#1A6B3A', fontSize:14 }}>¡Todos bien!</div>
               <div style={{ color:'#888', fontSize:12, marginTop:4 }}>Ningún estudiante en riesgo en {periodoSel?.nombre}</div>
             </div>
           ) : (
-            <div style={{ maxHeight:340, overflowY:'auto' }}>
+            <div className="content-fade-in" style={{ maxHeight:340, overflowY:'auto' }}>
               {riesgo.map((e, idx) => {
                 const motivos = []
                 if (e.promedio!==null && e.promedio<minimo)         motivos.push({ l:'nota baja', c:'#B71C1C' })

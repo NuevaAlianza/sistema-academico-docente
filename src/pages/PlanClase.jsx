@@ -2,17 +2,17 @@
 import { useState, useRef, useEffect } from 'react'
 import React from 'react'
 // ── Carga imagen local via IPC ────────────────────────────────────────────────
-function ImgLocal({ ruta, style, onClick }) {
+function ImgLocal({ ruta, style, onClick, className }) {
   const [src, setSrc] = React.useState(null)
   React.useEffect(() => {
     if (!ruta) return
     window.api.invoke('leer-imagen', ruta).then(b64 => { if (b64) setSrc(b64) })
   }, [ruta])
   if (!src) return (
-    <div style={{ ...style, background: '#F0F4FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, color: '#CCC', cursor: onClick ? 'zoom-in' : 'default' }}
+    <div className={className} style={{ ...style, background: '#F0F4FA', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, color: '#CCC', cursor: onClick ? 'zoom-in' : 'default' }}
       onClick={onClick}>🖼️</div>
   )
-  return <img src={src} alt="" style={{ ...style, objectFit: 'contain', cursor: onClick ? 'zoom-in' : 'default' }} onClick={onClick} />
+  return <img className={className} src={src} alt="" style={{ ...style, objectFit: 'contain', cursor: onClick ? 'zoom-in' : 'default' }} onClick={onClick} />
 }
 
 
@@ -109,7 +109,7 @@ const TFG={I:'#006064',D:'#1B5E20',C:'#E65100'}
 const TLB={I:'Inicio',D:'Desarrollo',C:'Cierre'}
 const FASES=['SENTIR','PENSAR','ACTUAR','CELEBRAR']
 
-export default function PlanClase({tema,materia,periodoColor,cursos,anioId,onSave,onClose}) {
+export default function PlanClase({tema,materia,periodoColor,cursos,anioId,onSave,onClose,closing}) {
   const col=periodoColor||materia?.color||'#2563A8'
   const [mode,setMode]=useState(()=>parseMeta(tema?.meta_json)?'view':'empty')
   const [form,setForm]=useState(()=>parseMeta(tema?.meta_json)||{...EMPTY})
@@ -236,9 +236,9 @@ export default function PlanClase({tema,materia,periodoColor,cursos,anioId,onSav
   )
 
   return(
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.52)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500,padding:20}}
+    <div className="modal-backdrop" data-closing={closing} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.52)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500,padding:20}}
       onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
-      <div style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:740,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 64px rgba(0,0,0,.35)',overflow:'hidden'}}>
+      <div className="modal-content" data-closing={closing} style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:740,maxHeight:'92vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 64px rgba(0,0,0,.35)',overflow:'hidden'}}>
 
         <Head/>
 
@@ -584,9 +584,9 @@ export default function PlanClase({tema,materia,periodoColor,cursos,anioId,onSav
 
       {/* ── Lightbox imágenes ── */}
       {imgLightbox&&(
-        <div onClick={()=>setImgLightbox(null)}
+        <div className="modal-backdrop" onClick={()=>setImgLightbox(null)}
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.9)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:600,cursor:'zoom-out',padding:24}}>
-          <ImgLocal ruta={imgLightbox} style={{maxWidth:'100%',maxHeight:'100%',borderRadius:8,boxShadow:'0 8px 40px rgba(0,0,0,.6)'}}/>
+          <ImgLocal ruta={imgLightbox} style={{maxWidth:'100%',maxHeight:'100%',borderRadius:8,boxShadow:'0 8px 40px rgba(0,0,0,.6)'}} className="modal-content"/>
           <button onClick={()=>setImgLightbox(null)}
             style={{position:'fixed',top:20,right:24,background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.3)',color:'#fff',fontSize:22,width:42,height:42,borderRadius:'50%',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>✕</button>
         </div>

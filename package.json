@@ -1,6 +1,6 @@
 {
   "name": "sistema-academico-docente",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Sistema de gestión académica para docentes",
   "main": "electron/main.js",
   "scripts": {
@@ -10,25 +10,35 @@
     "preview": "vite preview"
   },
   "build": {
-  "appId": "com.nuevaalianza.sistema-academico",
-  "productName": "Sistema Académico Docente",
-  "copyright": "2025 Nueva Alianza",
-  "directories": { "output": "release" },
-  "files": ["dist/**/*", "electron/**/*", "node_modules/**/*", "package.json"],
-  "win": { "target": "nsis", "icon": "public/icon.ico" },
-  "nsis": {
-    "oneClick": false,
-    "allowToChangeInstallationDirectory": true,
-    "createDesktopShortcut": true,
-    "createStartMenuShortcut": true,
-    "shortcutName": "Sistema Académico"
+    "appId": "com.nuevaalianza.sistema-academico",
+    "productName": "Sistema Académico Docente",
+    "copyright": "2025 Nueva Alianza",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sistema Académico"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "NuevaAlianza",
+      "repo": "sistema-academico-docente"
+    }
   },
-  "publish": {
-    "provider": "github",
-    "owner": "NuevaAlianza",
-    "repo": "sistema-academico-docente"
-  }
-},
   "dependencies": {
     "better-sqlite3": "^9.4.3",
     "electron-updater": "^6.8.3",

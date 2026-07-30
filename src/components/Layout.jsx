@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useModalTransition } from '../hooks/useModalTransition'
 
 const MENU = [
   { to: '/dashboard',      icono: '📊', label: 'Dashboard'      },
@@ -9,6 +10,7 @@ const MENU = [
   { to: '/asistencia',     icono: '✅', label: 'Asistencia'     },
   { to: '/calificaciones', icono: '📝', label: 'Calificaciones' },
   { to: '/temario',        icono: '📋', label: 'Temario'        },
+  { to: '/reportes', icono: '📈', label: 'Reportes' },
 ]
 
 const COLORES = ['#2563A8','#00695C','#5C2D91','#C84B00','#1A6B3A','#B71C1C','#7A5C00']
@@ -20,6 +22,7 @@ export default function Layout({ anio, materia, materias, onCambiarMateria }) {
   const [formNueva,      setFormNueva]      = useState({ nombre:'', color:'#2563A8' })
   const [guardando,      setGuardando]      = useState(false)
   const nav = useNavigate()
+  const modalNuevaT = useModalTransition(modalNueva)
 
   useEffect(() => {
     window.api.invoke('get-config').then(cfg => {
@@ -161,10 +164,10 @@ export default function Layout({ anio, materia, materias, onCambiarMateria }) {
       </div>
 
       {/* MODAL NUEVA MATERIA */}
-      {modalNueva && (
-        <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:800 }}
+      {modalNuevaT && (
+        <div className="modal-backdrop" data-closing={modalNuevaT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:800 }}
           onClick={e => { if (e.target===e.currentTarget) setModalNueva(false) }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:28, width:400, boxShadow:'0 16px 48px #0004' }}>
+          <div className="modal-content" data-closing={modalNuevaT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:400, boxShadow:'0 16px 48px #0004' }}>
             <h2 style={{ color:'#1B3A6B', marginBottom:6, fontSize:17 }}>+ Nueva Materia</h2>
             <p style={{ color:'#888', fontSize:12, marginBottom:20 }}>Puedes tener hasta 3 materias por año escolar.</p>
 

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useModalTransition } from '../hooks/useModalTransition'
 
 const COLOR_BASE = '#1B3A6B'
 const S = {
@@ -42,9 +43,20 @@ function indicadores(est, cfg = { minimo: 70, semVerde: 80, semAmarillo: 60 }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-//  EXPORTAR PDF GRUPAL
+//  slug: nombre de archivo seguro a partir de un texto libre
 // ──────────────────────────────────────────────────────────────────────────
-function exportarPDFGrupal(datos, cursoSel, periodoSel, materia) {
+function slug(s) {
+  const diacriticos = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g')
+  return (s || '')
+    .normalize('NFD').replace(diacriticos, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+//  CONSTRUIR HTML — REPORTE GRUPAL (reutilizable: impresión manual o lote)
+// ──────────────────────────────────────────────────────────────────────────
+function construirHTMLGrupal(datos, cursoSel, periodoSel, materia, { autoprint = true } = {}) {
   const { temas_total, temas_realizados, estudiantes } = datos
   const cfg       = datos.config || { semVerde: 80, semAmarillo: 60, minimo: 70 }
   const conProm   = estudiantes.filter(e => !e.sin_calificar)
@@ -52,6 +64,8 @@ function exportarPDFGrupal(datos, cursoSel, periodoSel, materia) {
   const temaPct   = temas_total > 0 ? Math.round(temas_realizados / temas_total * 100) : 0
   const enRiesgo  = estudiantes.filter(e => e.en_riesgo).length
   const fecha     = new Date().toLocaleDateString('es-DO', { day:'2-digit', month:'long', year:'numeric' })
+  // autoprint:false para el lote — printToPDF() falla si la página además llama a window.print() sola
+  const scriptImpresion = autoprint ? '<script>window.onload=()=>window.print()</script>' : ''
 
   const filas = estudiantes.map((est, i) => {
     const promColor  = est.sin_calificar ? '#888' : est.promedio >= cfg.semVerde ? '#1A6B3A' : est.promedio >= cfg.semAmarillo ? '#C84B00' : '#B71C1C'
@@ -130,10 +144,15 @@ function exportarPDFGrupal(datos, cursoSel, periodoSel, materia) {
     <span>● = tiene observaciones en cuaderno anecdótico</span>
     <span>${cursoSel.nombre} · ${periodoSel.nombre} · ${fecha}</span>
   </div>
-  <script>window.onload=()=>window.print()</script>
+  ${scriptImpresion}
   </body></html>`
 
-  const win = window.open('', '_blank')
+  return html
+}
+
+function exportarPDFGrupal(datos, cursoSel, periodoSel, materia) {
+  const html = construirHTMLGrupal(datos, cursoSel, periodoSel, materia)
+  const win  = window.open('', '_blank')
   if (!win) {
     alert('No se pudo abrir la ventana de impresión. Verifica que el navegador no esté bloqueando ventanas emergentes.')
     return
@@ -143,11 +162,13 @@ function exportarPDFGrupal(datos, cursoSel, periodoSel, materia) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-//  EXPORTAR PDF INDIVIDUAL
+//  CONSTRUIR HTML — REPORTE INDIVIDUAL (reutilizable: impresión manual o lote)
 // ──────────────────────────────────────────────────────────────────────────
-function exportarPDFIndividual(datos, cursoSel, periodoSel, materia, cfg = { semVerde: 80, semAmarillo: 60, minimo: 70 }) {
+function construirHTMLIndividual(datos, cursoSel, periodoSel, materia, cfg = { semVerde: 80, semAmarillo: 60, minimo: 70 }, { autoprint = true } = {}) {
   const { estudiante, promedio, competencias, asistencia, temas, observaciones } = datos
   const fecha      = new Date().toLocaleDateString('es-DO', { day:'2-digit', month:'long', year:'numeric' })
+  // autoprint:false para el lote — printToPDF() falla si la página además llama a window.print() sola
+  const scriptImpresion = autoprint ? '<script>window.onload=()=>window.print()</script>' : ''
   const promColor  = promedio === null ? '#888' : promedio >= cfg.semVerde ? '#1A6B3A' : promedio >= cfg.semAmarillo ? '#C84B00' : '#B71C1C'
   const asistColor = asistencia.pct === null ? '#888' : asistencia.pct >= cfg.semVerde ? '#1A6B3A' : asistencia.pct >= cfg.semAmarillo ? '#C84B00' : '#B71C1C'
 
@@ -249,10 +270,15 @@ function exportarPDFIndividual(datos, cursoSel, periodoSel, materia, cfg = { sem
   </div>` : ''}
 
   <div class="footer">${estudiante.nombre_completo} · ${cursoSel?.nombre} · ${periodoSel?.nombre} · ${fecha}</div>
-  <script>window.onload=()=>window.print()</script>
+  ${scriptImpresion}
   </body></html>`
 
-  const win = window.open('', '_blank')
+  return html
+}
+
+function exportarPDFIndividual(datos, cursoSel, periodoSel, materia, cfg) {
+  const html = construirHTMLIndividual(datos, cursoSel, periodoSel, materia, cfg)
+  const win  = window.open('', '_blank')
   if (!win) {
     alert('No se pudo abrir la ventana de impresión. Verifica que el navegador no esté bloqueando ventanas emergentes.')
     return
@@ -562,6 +588,17 @@ export default function Reportes({ anio, materia }) {
   const [datosInd,    setDatosInd]    = useState(null)
   const [cargando,    setCargando]    = useState(false)
 
+  // ── Generación por lote ──────────────────────────────────────────────────
+  const [modalLote,     setModalLote]     = useState(false)
+  const [loteGrado,     setLoteGrado]     = useState('')
+  const [loteSecciones, setLoteSecciones] = useState([]) // ids de curso elegidos
+  const [lotePeriodoId, setLotePeriodoId] = useState(null)
+  const [loteGenerando, setLoteGenerando] = useState(false)
+  const [loteProgreso,  setLoteProgreso]  = useState({ done: 0, total: 0 })
+  const [loteToast,     setLoteToast]     = useState(null) // { msg, carpeta, leaving }
+  const modalLoteT   = useModalTransition(modalLote)
+  const loteToastGen = useRef(0)
+
   // Cargar cursos y períodos al montar
   useEffect(() => {
     if (!anio) return
@@ -604,6 +641,77 @@ export default function Reportes({ anio, materia }) {
     setVista('individual')
   }
 
+  const grados = [...new Set(cursos.map(c => c.grado).filter(Boolean))].sort()
+  const seccionesDisponibles = cursos.filter(c => c.grado === loteGrado)
+
+  function toggleSeccion(cursoId) {
+    setLoteSecciones(prev => prev.includes(cursoId) ? prev.filter(id => id !== cursoId) : [...prev, cursoId])
+  }
+
+  function abrirModalLote() {
+    setLoteGrado('')
+    setLoteSecciones([])
+    setLotePeriodoId(periodoSel?.id || null)
+    setModalLote(true)
+  }
+
+  function mostrarLoteToast(msg, carpeta) {
+    const gen = ++loteToastGen.current
+    setLoteToast({ msg, carpeta, leaving: false })
+    setTimeout(() => { if (loteToastGen.current === gen) setLoteToast(t => t && ({ ...t, leaving: true })) }, 5000)
+    setTimeout(() => { if (loteToastGen.current === gen) setLoteToast(null) }, 5200)
+  }
+
+  async function generarLote() {
+    if (!loteGrado || loteSecciones.length === 0 || !lotePeriodoId) return
+    const periodoObj = periodos.find(p => p.id === lotePeriodoId)
+    const cursosSel   = cursos.filter(c => loteSecciones.includes(c.id))
+    if (!periodoObj || cursosSel.length === 0) return
+
+    setLoteGenerando(true)
+    setLoteProgreso({ done: 0, total: 0 })
+
+    const items = []
+    for (const curso of cursosSel) {
+      const datosG = await window.api.invoke('get-reporte-grupal', curso.id, periodoObj.id, materia?.id || null)
+      items.push({
+        html:     construirHTMLGrupal(datosG, curso, periodoObj, materia, { autoprint: false }),
+        filename: `${curso.grado}${curso.seccion}_Grupal.pdf`,
+      })
+      for (const est of datosG.estudiantes) {
+        const datosI = await window.api.invoke('get-reporte-individual', est.id, curso.id, periodoObj.id, materia?.id || null)
+        items.push({
+          html:     construirHTMLIndividual(datosI, curso, periodoObj, materia, datosG.config, { autoprint: false }),
+          filename: `${curso.grado}${curso.seccion}_${est.numero_lista}_${slug(est.nombre_completo)}.pdf`,
+        })
+      }
+    }
+
+    setLoteProgreso({ done: 0, total: items.length })
+    const unsub = window.api.on('lote-progreso', p => setLoteProgreso(p))
+
+    const seccionesLetras = cursosSel.map(c => c.seccion || c.nombre).join('-')
+    const fechaISO         = new Date().toISOString().slice(0, 10)
+    const carpetaSugerida  = `Reportes_${loteGrado}${seccionesLetras}_${periodoObj.nombre}_${fechaISO}`
+
+    try {
+      const res = await window.api.invoke('generar-reportes-lote', { items, carpetaSugerida })
+      unsub()
+      setLoteGenerando(false)
+      if (res.cancelado) return
+      if (res.ok) {
+        setModalLote(false)
+        mostrarLoteToast(`✅ ${res.count} PDFs generados en ${carpetaSugerida}`, res.carpeta)
+      } else {
+        alert('Error generando los reportes: ' + (res.error || 'desconocido'))
+      }
+    } catch (e) {
+      unsub()
+      setLoteGenerando(false)
+      alert('Error generando los reportes: ' + e.message)
+    }
+  }
+
   const color = materia?.color || COLOR_BASE
 
   return (
@@ -642,6 +750,10 @@ export default function Reportes({ anio, materia }) {
               {periodos.map(p => <option key={p.id} value={p.id}>{p.nombre} — {p.titulo}</option>)}
             </select>
           </div>
+          {/* Generar reporte por lote */}
+          <button onClick={abrirModalLote} style={{ padding: '7px 14px', background: '#fff', border: '1.5px solid #DDE3ED', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: COLOR_BASE }}>
+            📦 Generar reporte por lote
+          </button>
         </div>
       </div>
 
@@ -662,7 +774,7 @@ export default function Reportes({ anio, materia }) {
       {cargando
         ? (
           <div style={{ textAlign: 'center', padding: 60, color: '#AAB4C4' }}>
-            <div style={{ fontSize: 28, marginBottom: 10 }}>⏳</div>
+            <div className="spinner" style={{ margin: '0 auto 10px' }} />
             <div>Cargando datos...</div>
           </div>
         )
@@ -709,6 +821,108 @@ export default function Reportes({ anio, materia }) {
             </div>
           )
       }
+
+      {/* MODAL GENERAR REPORTE POR LOTE */}
+      {modalLoteT && (
+        <div className="modal-backdrop" data-closing={modalLoteT.closing} style={{ position: 'fixed', inset: 0, background: '#0005', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500 }}
+          onClick={e => { if (e.target === e.currentTarget && !loteGenerando) setModalLote(false) }}>
+          <div className="modal-content" data-closing={modalLoteT.closing} style={{ background: '#fff', borderRadius: 14, padding: 28, width: 480, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 16px 48px #0004' }}>
+            <h2 style={{ color: COLOR_BASE, marginBottom: 6, fontSize: 17 }}>📦 Generar reporte por lote</h2>
+            <p style={{ color: '#888', fontSize: 12, marginBottom: 20 }}>
+              Genera el reporte grupal y el individual de cada estudiante de las secciones elegidas, todo en una carpeta nueva.
+            </p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={S.label}>Grado</label>
+              <select
+                value={loteGrado}
+                onChange={e => { setLoteGrado(e.target.value); setLoteSecciones([]) }}
+                style={{ ...S.sel, width: '100%' }}
+                disabled={loteGenerando}
+              >
+                <option value="">— Selecciona un grado —</option>
+                {grados.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+
+            {loteGrado && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={S.label}>Secciones</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {seccionesDisponibles.map(c => (
+                    <label key={c.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
+                      border: '1.5px solid ' + (loteSecciones.includes(c.id) ? COLOR_BASE : '#DDE3ED'),
+                      background: loteSecciones.includes(c.id) ? COLOR_BASE + '10' : '#fff',
+                      cursor: 'pointer', fontSize: 13,
+                    }}>
+                      <input type="checkbox" checked={loteSecciones.includes(c.id)} onChange={() => toggleSeccion(c.id)} disabled={loteGenerando} />
+                      {c.seccion || c.nombre}
+                    </label>
+                  ))}
+                  {seccionesDisponibles.length === 0 && <span style={{ color: '#AAA', fontSize: 12 }}>No hay secciones para este grado.</span>}
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={S.label}>Período</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {periodos.map(p => (
+                  <label key={p.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
+                    border: '1.5px solid ' + (lotePeriodoId === p.id ? COLOR_BASE : '#DDE3ED'),
+                    background: lotePeriodoId === p.id ? COLOR_BASE + '10' : '#fff',
+                    cursor: 'pointer', fontSize: 13,
+                  }}>
+                    <input type="radio" name="lote-periodo" checked={lotePeriodoId === p.id} onChange={() => setLotePeriodoId(p.id)} disabled={loteGenerando} />
+                    {p.nombre}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {loteGenerando ? (
+              <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                <div className="spinner" style={{ margin: '0 auto 10px' }} />
+                <div style={{ fontSize: 13, color: '#555' }}>
+                  {loteProgreso.total > 0 ? `Generando ${loteProgreso.done}/${loteProgreso.total} PDFs...` : 'Preparando...'}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setModalLote(false)} style={{ padding: '9px 20px', background: '#EEF2F7', border: '1px solid #DDE3ED', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#555' }}>
+                  Cancelar
+                </button>
+                <button
+                  onClick={generarLote}
+                  disabled={!loteGrado || loteSecciones.length === 0 || !lotePeriodoId}
+                  style={{
+                    padding: '9px 24px', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                    background: (!loteGrado || loteSecciones.length === 0 || !lotePeriodoId) ? '#CCC' : COLOR_BASE,
+                    cursor: (!loteGrado || loteSecciones.length === 0 || !lotePeriodoId) ? 'default' : 'pointer',
+                  }}
+                >
+                  📦 Generar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TOAST LOTE */}
+      {loteToast && (
+        <div className="toast" data-leaving={loteToast.leaving} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8, maxWidth: 360 }}>
+          <span>{loteToast.msg}</span>
+          <button
+            onClick={() => window.api.invoke('abrir-carpeta', loteToast.carpeta)}
+            style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', color: '#fff', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700 }}
+          >
+            📂 Abrir carpeta
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -164,7 +164,10 @@ class SistemaDB {
   deletePeriodoTitulo(materiaId, grado, numeroPeriodo) { return this.db.prepare("DELETE FROM periodo_titulos WHERE materia_id=? AND grado=? AND numero_periodo=?").run(materiaId, grado, numeroPeriodo); }
 
   getCursos(anioId) { return this.db.prepare("SELECT * FROM cursos WHERE anio_escolar_id=? AND estado='activo' ORDER BY grado,nombre").all(anioId); }
-  createCurso(d) { return this.db.prepare("INSERT INTO cursos (anio_escolar_id,nombre,grado,seccion,descripcion,color) VALUES (?,?,?,?,?,?)").run(d.anioId, d.nombre, d.grado||'', d.seccion||'', d.descripcion||'', d.color||'#2563A8'); }
+  createCurso(d) {
+    if (!d.nombre || !d.nombre.trim()) throw new Error('El nombre del curso es obligatorio');
+    return this.db.prepare("INSERT INTO cursos (anio_escolar_id,nombre,grado,seccion,descripcion,color) VALUES (?,?,?,?,?,?)").run(d.anioId, d.nombre, d.grado||'', d.seccion||'', d.descripcion||'', d.color||'#2563A8');
+  }
   updateCurso(id, d) { return this.db.prepare("UPDATE cursos SET nombre=?,grado=?,seccion=?,descripcion=?,color=? WHERE id=?").run(d.nombre, d.grado||'', d.seccion||'', d.descripcion||'', d.color||'#2563A8', id); }
   deleteCurso(id) { return this.db.prepare("UPDATE cursos SET estado='archivado' WHERE id=?").run(id); }
 
@@ -226,23 +229,27 @@ class SistemaDB {
     const periodos = this.db.prepare('SELECT * FROM periodos WHERE anio_escolar_id = ? ORDER BY numero_orden').all(anioId);
     const maxOrden = this.db.prepare('SELECT COALESCE(MAX(orden), 0) AS mx FROM temas WHERE curso_id = ? AND materia_id IS ?').get(cursoId, materiaId || null)?.mx || 0;
     const insertTema = this.db.prepare('INSERT INTO temas (materia_id, curso_id, periodo_id, titulo, estado, orden, contenido_texto, meta_json) VALUES (?, ?, ?, ?, ?, ?, \'\', ?)');
-    let count = 0;
+    const existeTema = this.db.prepare('SELECT id FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id IS ? AND titulo=?');
+    let count = 0, omitidos = 0;
+    const periodosNoEncontrados = [];
     let ordenBase = maxOrden;
     const batch = this.db.transaction(() => {
       (jsonData.periodos || []).forEach(p => {
         const periodo = periodos.find(dbP => dbP.numero_orden === p.numero || dbP.nombre === p.nombre);
-        if (!periodo) return;
+        if (!periodo) { periodosNoEncontrados.push(p.numero ?? p.nombre ?? '?'); return; }
         (p.temas || []).forEach(t => {
+          const titulo = t.titulo || 'Sin titulo';
+          if (existeTema.get(cursoId, periodo.id, materiaId || null, titulo)) { omitidos++; return; }
           ordenBase += 1;
           const meta = { subtitulo:t.subtitulo||null, semana:t.semana||null, fase:t.fase||null, competencia:t.competencia||null, indicadores:t.indicadores||null, peso:t.peso||null, instrumento:t.instrumento||null, actividades:t.actividades||null, texto_biblico:t.texto_biblico||null, metacognicion:t.metacognicion||null, recursos:t.recursos||null };
           Object.keys(meta).forEach(k => { if (meta[k] === null) delete meta[k]; });
-          insertTema.run(materiaId || null, cursoId, periodo.id, t.titulo || 'Sin titulo', t.estado || 'pendiente', ordenBase, Object.keys(meta).length > 0 ? JSON.stringify(meta) : null);
+          insertTema.run(materiaId || null, cursoId, periodo.id, titulo, t.estado || 'pendiente', ordenBase, Object.keys(meta).length > 0 ? JSON.stringify(meta) : null);
           count++;
         });
       });
     });
     batch();
-    return { count };
+    return { count, omitidos, periodosNoEncontrados };
   }
 
   getEstudiantes(cursoId) { return this.db.prepare("SELECT * FROM estudiantes WHERE curso_id=? AND estado='activo' ORDER BY numero_lista,nombre_completo").all(cursoId); }
@@ -429,7 +436,10 @@ deleteEstudiante(id) {
       : this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND modo='multi' ORDER BY id");
     const actsMulti = materiaId ? q.all(cursoId, periodoId, materiaId) : q.all(cursoId, periodoId);
 
-    const resultado = {};
+    const califStmt = this.db.prepare("SELECT nota, distribucion_multi FROM calificaciones WHERE actividad_id=? AND estudiante_id=?");
+    const califs = new Map(actsMulti.map(act => [act.id, califStmt.get(act.id, estudianteId)]));
+
+    const competencias = {};
     for (const comp of COMPS) {
       let peso_evaluado = 0, suma_ponderada = 0, en_periodo = false;
 
@@ -441,10 +451,7 @@ deleteEstudiante(id) {
         const peso_unit = act.peso / n;
         en_periodo = true;
 
-        const calif = this.db.prepare(
-          "SELECT nota, distribucion_multi FROM calificaciones WHERE actividad_id=? AND estudiante_id=?"
-        ).get(act.id, estudianteId);
-
+        const calif = califs.get(act.id);
         if (calif && calif.nota !== null) {
           const dist      = calif.distribucion_multi ? JSON.parse(calif.distribucion_multi) : null;
           const pts       = dist ? (dist[comp] ?? 0) : (calif.nota / n);
@@ -455,11 +462,22 @@ deleteEstudiante(id) {
       }
 
       if (!en_periodo) continue;
-      resultado[comp] = {
+      competencias[comp] = {
         nota: peso_evaluado > 0 ? Math.round(suma_ponderada / peso_evaluado) : null,
       };
     }
-    return resultado;
+
+    // Promedio final del período: ponderado por el peso de cada actividad multi.
+    // Equivale a ponderar cada competencia por su peso acumulado en el período
+    // (no por partes iguales) — mismo criterio que getReporteIndividual.
+    let pesoTotal = 0, sumaXPeso = 0;
+    for (const act of actsMulti) {
+      const calif = califs.get(act.id);
+      if (calif && calif.nota !== null) { sumaXPeso += calif.nota * act.peso; pesoTotal += act.peso; }
+    }
+    const promedio = pesoTotal > 0 ? Math.round(sumaXPeso / pesoTotal) : null;
+
+    return { competencias, promedio };
   }
 
   getObservaciones(estudianteId) { return this.db.prepare("SELECT * FROM observaciones WHERE estudiante_id=? ORDER BY fecha DESC, id DESC").all(estudianteId); }
@@ -477,7 +495,7 @@ deleteEstudiante(id) {
 
   getStats(anioId, materiaId) {
     const cursos      = this.db.prepare("SELECT COUNT(*) as n FROM cursos WHERE anio_escolar_id=? AND estado='activo'").get(anioId);
-    const estudiantes = this.db.prepare("SELECT COUNT(*) as n FROM estudiantes e JOIN cursos c ON e.curso_id=c.id WHERE c.anio_escolar_id=? AND e.estado='activo'").get(anioId);
+    const estudiantes = this.db.prepare("SELECT COUNT(*) as n FROM estudiantes e JOIN cursos c ON e.curso_id=c.id WHERE c.anio_escolar_id=? AND c.estado='activo' AND e.estado='activo'").get(anioId);
     const temasQ = materiaId
       ? this.db.prepare("SELECT t.estado, COUNT(*) as n FROM temas t JOIN cursos c ON t.curso_id=c.id WHERE c.anio_escolar_id=? AND t.materia_id=? GROUP BY t.estado").all(anioId, materiaId)
       : this.db.prepare("SELECT t.estado, COUNT(*) as n FROM temas t JOIN cursos c ON t.curso_id=c.id WHERE c.anio_escolar_id=? GROUP BY t.estado").all(anioId);
@@ -689,14 +707,13 @@ deleteEstudiante(id) {
  
     const filas = estudiantes.map(est => {
       // Promedio ponderado del período
-      const notas = this.db.prepare(`
-        SELECT c.nota, a.peso
-        FROM calificaciones c
-        JOIN actividades a ON c.actividad_id = a.id
-        WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=?
-          AND c.nota IS NOT NULL
-      `).all(est.id, cursoId, periodoId);
- 
+      const notasQ = materiaId
+        ? `SELECT c.nota, a.peso FROM calificaciones c JOIN actividades a ON c.actividad_id = a.id WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=? AND a.materia_id=? AND c.nota IS NOT NULL`
+        : `SELECT c.nota, a.peso FROM calificaciones c JOIN actividades a ON c.actividad_id = a.id WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=? AND c.nota IS NOT NULL`;
+      const notas = materiaId
+        ? this.db.prepare(notasQ).all(est.id, cursoId, periodoId, materiaId)
+        : this.db.prepare(notasQ).all(est.id, cursoId, periodoId);
+
       let promedio     = null;
       let sinCalificar = notas.length === 0;
       if (notas.length > 0) {

@@ -72,6 +72,21 @@ app.whenReady().then(() => {
   ipcMain.handle('delete-tema', (_, id)            => db.deleteTema(id));
 
   // ── IMPORTAR TEMARIO DESDE JSON (web app o generado por IA) ─────────────
+  ipcMain.handle('seleccionar-json-temario', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Seleccionar archivo JSON de temario',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+    if (canceled || filePaths.length === 0) return null;
+    try {
+      const contenido = fs.readFileSync(filePaths[0], 'utf-8');
+      const jsonData = JSON.parse(contenido);
+      return { jsonData, archivo: path.basename(filePaths[0]) };
+    } catch (err) {
+      return { error: 'El archivo no contiene JSON válido: ' + err.message };
+    }
+  });
   ipcMain.handle('import-temario-json', (_, { jsonData, cursoId, materiaId, anioId }) => {
     try {
       return db.importTemarioJson({ jsonData, cursoId, materiaId, anioId });
@@ -128,9 +143,53 @@ ipcMain.handle('get-estudiantes-sin-nota', (_, cursoId, periodoId, materiaId) =>
 
   ipcMain.handle('get-reporte-grupal',     (_, cursoId, periodoId, materiaId) =>
   db.getReporteGrupal(cursoId, periodoId, materiaId || null));
- 
+
 ipcMain.handle('get-reporte-individual', (_, estudianteId, cursoId, periodoId, materiaId) =>
   db.getReporteIndividual(estudianteId, cursoId, periodoId, materiaId || null));
+
+  // ── REPORTES: GENERAR LOTE (grupal + individuales, sin diálogo por archivo) ──
+  ipcMain.handle('generar-reportes-lote', async (event, { items, carpetaSugerida }) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Elegir dónde guardar los reportes',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (canceled || filePaths.length === 0) return { cancelado: true };
+
+    const carpetaDestino = path.join(filePaths[0], carpetaSugerida);
+    fs.mkdirSync(carpetaDestino, { recursive: true });
+
+    const tmpDir = path.join(app.getPath('temp'), 'sd_reportes_lote_' + Date.now());
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    // Ventana oculta reutilizada secuencialmente: printToPDF() da el buffer
+    // directo, sin el diálogo de impresión nativo que sí abre window.print().
+    const win = new BrowserWindow({ show: false });
+    let done = 0;
+    const total = items.length;
+
+    try {
+      for (const item of items) {
+        const tmpFile = path.join(tmpDir, `tmp_${done}.html`);
+        fs.writeFileSync(tmpFile, item.html, 'utf-8');
+        await win.loadFile(tmpFile);
+        const buffer = await win.webContents.printToPDF({ printBackground: true, pageSize: 'Letter' });
+        fs.writeFileSync(path.join(carpetaDestino, item.filename), buffer);
+        fs.unlinkSync(tmpFile);
+        done++;
+        event.sender.send('lote-progreso', { done, total });
+      }
+    } finally {
+      win.destroy();
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}
+    }
+
+    return { ok: true, carpeta: carpetaDestino, count: done };
+  });
+
+  ipcMain.handle('abrir-carpeta', (_, ruta) => {
+    require('electron').shell.openPath(ruta);
+    return { ok: true };
+  });
 
   // ── ESPACIO DEL CURSO ────────────────────────────────────────────────────
   ipcMain.handle('get-curso-nota',        (_, cursoId, mId)      => db.getCursoNota(cursoId, mId));
@@ -224,7 +283,8 @@ ipcMain.handle('delete-archivo-tema',  async (_, id) => {
 });
 ipcMain.handle('abrir-archivo', async (_, ruta) => {
   const { shell } = require('electron');
-  shell.openPath(ruta);
+  const error = await shell.openPath(ruta);
+  if (error) return { ok: false, error };
   return { ok: true };
 });
 ipcMain.handle('adjuntar-archivo-tema', async (_, temaId) => {

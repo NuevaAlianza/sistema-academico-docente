@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useModalTransition } from '../hooks/useModalTransition'
 
 const SECCION = ({ titulo, icono, children }) => (
   <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001', marginBottom:20, overflow:'hidden' }}>
@@ -42,6 +43,9 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
   const [titulosGrado, setTitulosGrado] = useState({})
   const [guardandoTit, setGuardandoTit] = useState(false)
   const [confirmElim,  setConfirmElim]  = useState(null)
+  const modalAnioT   = useModalTransition(modalAnio)
+  const matTitulosT  = useModalTransition(matTitulos)
+  const confirmElimT = useModalTransition(confirmElim)
 
   useEffect(() => { cargar(); cargarAnio() }, [])
 
@@ -179,7 +183,7 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
       {/* ── AÑO ESCOLAR ── */}
       <SECCION titulo="Año Escolar" icono="📅">
         {anioActivo ? (
-          <div>
+          <div className="content-fade-in">
             <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:20 }}>
               <div style={{ flex:1, background:'#EEF6FF', borderRadius:10, padding:'14px 18px', border:'1px solid #C5DAFF' }}>
                 <div style={{ fontSize:11, fontWeight:700, color:'#7A9FC8', marginBottom:4 }}>AÑO ACTIVO</div>
@@ -201,7 +205,7 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
             </button>
           </div>
         ) : (
-          <div style={{ color:'#888', fontSize:13 }}>Cargando...</div>
+          <div style={{ color:'#888', fontSize:13, display:'flex', alignItems:'center', gap:8 }}><div className="spinner" style={{ width:14, height:14, borderWidth:2 }} />Cargando...</div>
         )}
       </SECCION>
 
@@ -422,10 +426,10 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
       </div>
 
       {/* ── MODAL NUEVO AÑO ── */}
-      {modalAnio && (
-        <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+      {modalAnioT && (
+        <div className="modal-backdrop" data-closing={modalAnioT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
           onClick={e => { if (e.target===e.currentTarget) setModalAnio(false) }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:32, width:480, boxShadow:'0 16px 48px #0004' }}>
+          <div className="modal-content" data-closing={modalAnioT.closing} style={{ background:'#fff', borderRadius:14, padding:32, width:480, boxShadow:'0 16px 48px #0004' }}>
             <h2 style={{ color:'#1B3A6B', marginBottom:6, fontSize:18 }}>🆕 Nuevo Año Escolar</h2>
             <p style={{ color:'#888', fontSize:12, marginBottom:24 }}>Se crean los 4 períodos automáticamente. Datos actuales quedan guardados.</p>
             <div style={{ marginBottom:16 }}>
@@ -460,14 +464,14 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
       )}
 
       {/* ── MODAL TÍTULOS POR GRADO ── */}
-      {matTitulos && (
-        <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}
+      {matTitulosT && (
+        <div className="modal-backdrop" data-closing={matTitulosT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}
           onClick={e => { if (e.target===e.currentTarget) { setMatTitulos(null); setGradoSel(null) } }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:28, width:560, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
+          <div className="modal-content" data-closing={matTitulosT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:560, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
             <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
-              <div style={{ width:14, height:14, borderRadius:'50%', background:matTitulos.color }} />
+              <div style={{ width:14, height:14, borderRadius:'50%', background:matTitulosT.value.color }} />
               <div>
-                <div style={{ fontWeight:800, fontSize:16, color:'#1B3A6B' }}>Títulos por grado — {matTitulos.nombre}</div>
+                <div style={{ fontWeight:800, fontSize:16, color:'#1B3A6B' }}>Títulos por grado — {matTitulosT.value.nombre}</div>
                 <div style={{ fontSize:12, color:'#888', marginTop:2 }}>Cada grado puede tener títulos diferentes en cada período</div>
               </div>
               <div style={{ flex:1 }} />
@@ -480,7 +484,7 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
               ) : (
                 <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
                   {grados.map(g => (
-                    <button key={g} onClick={() => seleccionarGrado(g)} style={{ padding:'6px 16px', borderRadius:20, fontSize:12, fontWeight:700, cursor:'pointer', background: gradoSel===g ? matTitulos.color : '#EEF2F7', color: gradoSel===g ? '#fff' : '#555', border: gradoSel===g ? '2px solid '+matTitulos.color : '2px solid #DDE3ED' }}>
+                    <button key={g} onClick={() => seleccionarGrado(g)} style={{ padding:'6px 16px', borderRadius:20, fontSize:12, fontWeight:700, cursor:'pointer', background: gradoSel===g ? matTitulosT.value.color : '#EEF2F7', color: gradoSel===g ? '#fff' : '#555', border: gradoSel===g ? '2px solid '+matTitulosT.value.color : '2px solid #DDE3ED' }}>
                       {g}
                     </button>
                   ))}
@@ -490,7 +494,7 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
             {gradoSel && (
               <div style={{ flex:1, overflowY:'auto' }}>
                 <div style={{ fontSize:11, fontWeight:700, color:'#AAB4C4', letterSpacing:1.5, marginBottom:12 }}>
-                  TÍTULOS PARA {gradoSel} — {matTitulos.nombre}
+                  TÍTULOS PARA {gradoSel} — {matTitulosT.value.nombre}
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
                   {periodos.map((per, i) => {
@@ -515,7 +519,7 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
                 </div>
                 <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
                   <button onClick={() => setGradoSel(null)} style={{ padding:'9px 20px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
-                  <button onClick={guardarTitulosGrado} disabled={guardandoTit} style={{ padding:'9px 24px', background:guardandoTit?'#AAA':matTitulos.color, color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:guardandoTit?'default':'pointer' }}>
+                  <button onClick={guardarTitulosGrado} disabled={guardandoTit} style={{ padding:'9px 24px', background:guardandoTit?'#AAA':matTitulosT.value.color, color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:guardandoTit?'default':'pointer' }}>
                     {guardandoTit ? '⏳ Guardando...' : '💾 Guardar títulos'}
                   </button>
                 </div>
@@ -526,20 +530,20 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
       )}
 
       {/* ── MODAL CONFIRMAR ELIMINAR MATERIA ── */}
-      {confirmElim && (
-        <div style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:700 }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:32, width:420, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
+      {confirmElimT && (
+        <div className="modal-backdrop" data-closing={confirmElimT.closing} style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:700 }}>
+          <div className="modal-content" data-closing={confirmElimT.closing} style={{ background:'#fff', borderRadius:14, padding:32, width:420, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
             <div style={{ fontSize:40, marginBottom:12 }}>⚠️</div>
             <h3 style={{ color:'#1B3A6B', marginBottom:8, fontSize:16 }}>¿Eliminar esta materia?</h3>
             <div style={{ display:'flex', alignItems:'center', gap:8, justifyContent:'center', marginBottom:12 }}>
-              <div style={{ width:12, height:12, borderRadius:'50%', background:confirmElim.color }} />
-              <span style={{ fontWeight:700, color:confirmElim.color, fontSize:15 }}>{confirmElim.nombre}</span>
+              <div style={{ width:12, height:12, borderRadius:'50%', background:confirmElimT.value.color }} />
+              <span style={{ fontWeight:700, color:confirmElimT.value.color, fontSize:15 }}>{confirmElimT.value.nombre}</span>
             </div>
             <p style={{ color:'#555', fontSize:13, marginBottom:6 }}>Se eliminará la materia y todos sus títulos por grado.</p>
             <p style={{ color:'#AAB4C4', fontSize:12, marginBottom:24 }}>Los cursos, temas, asistencias y calificaciones quedan intactos.</p>
             <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
               <button onClick={() => setConfirmElim(null)} style={{ padding:'10px 28px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555', fontWeight:600 }}>Cancelar</button>
-              <button onClick={() => eliminarMateria(confirmElim)} style={{ padding:'10px 28px', background:'#B71C1C', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>🗑️ Sí, eliminar</button>
+              <button onClick={() => eliminarMateria(confirmElimT.value)} style={{ padding:'10px 28px', background:'#B71C1C', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>🗑️ Sí, eliminar</button>
             </div>
           </div>
         </div>

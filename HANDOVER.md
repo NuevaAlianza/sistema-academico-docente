@@ -1,13 +1,44 @@
 # HANDOVER.md — Estado actual del proyecto
 # Sistema Académico Docente
 
-**Versión:** 1.5.0  
-**Fecha:** 2026-06-09  
-**Estado:** Estable — modo multi-competencia funcional
+**Versión:** 1.6.0  
+**Fecha:** 2026-07-30  
+**Estado:** Estable — pase de animaciones + generación de reportes por lote completados, build en curso
 
 ---
 
 ## Lo último que se hizo
+
+### Ciclo v1.6.0 (completado — animaciones + reportes por lote)
+
+Detalle completo en `PRD.md` § 9. Resumen:
+
+1. **Pase de diseño con la skill `emil-design-eng`** (instalada en `.claude/skills/`, filosofía de Emil Kowalski): diagnóstico priorizado de toda la UI, después implementado en tres rondas:
+   - Loading states en texto plano → spinner + fade-in del contenido.
+   - Toasts de Calificaciones/Asistencia → entrada y salida animadas en vez de aparecer/desaparecer de golpe.
+   - Los ~24 modales del proyecto → fade de backdrop + scale/fade del contenido al abrir y cerrar, vía hook nuevo `src/hooks/useModalTransition.js` (no cambia cuándo/por qué se abre o cierra cada modal, solo cuánto tarda en desmontarse al cerrar).
+   - Semáforo del Dashboard → de `width` a `clip-path` para las barras (mejor encaje que `transform:scaleX()` al ser 3 segmentos co-dependientes).
+2. **Bug de carrera encontrado al animar el semáforo**: cambiar de período varias veces seguido podía pisar los datos en pantalla con la respuesta de un período viejo llegando tarde. Corregido con un contador de solicitud más reciente en `Dashboard.jsx`.
+3. **Generación de reportes por lote** (Reportes.jsx): nueva función — elegir grado + secciones (checkboxes) + período, y generar de una vez el PDF grupal de cada sección más el PDF individual de cada estudiante, todo en una carpeta con nombre descriptivo. Requirió refactorizar la generación de HTML del reporte (separada de la apertura de ventana/impresión) y agregar un IPC nuevo (`generar-reportes-lote`) que usa `webContents.printToPDF()` sobre una ventana oculta — sin diálogo por archivo. Se encontró y corrigió un bug real en pruebas (el script de auto-impresión embebido en el HTML rompía `printToPDF()`). Probado con datos reales de 6to A/B/C FIHR: 17 PDFs generados y verificados.
+4. Bump versión a `1.6.0` en `package.json` (justificado: hay función nueva, no solo fixes).
+
+### Ciclo v1.5.1 (completado — ronda de pruebas funcionales end-to-end)
+
+Pruebas manuales/scripted end-to-end del flujo completo (calificaciones multi-competencia, reportes grupal/individual, temario, cuaderno anecdótico, dashboard/semáforo, CRUD de cursos), con datos de prueba reales creados en la BD de producción y también en BDs aisladas para casos que requerían mezclar materias. 11 bugs encontrados y corregidos — detalle completo en `PRD.md` § 8. Resumen:
+
+1. `getReporteGrupal` no filtraba por `materia_id` (mezclaba notas de materias distintas).
+2. Nota final del período distinta entre tab "Multi" de Calificaciones y Reportes (equal-weight vs ponderado por peso) — unificado a ponderado por peso.
+3. Tab "Simple" de Calificaciones mal interpretaba actividades modo `multi` (y el PDF que lo usa).
+4. Panel lateral "Competencias" con el mismo problema que el punto 3.
+5. `abrir-archivo` (adjuntos de Temario) ignoraba errores de `shell.openPath`.
+6. Import masivo de temario JSON: backend ya existía (`importTemarioJson`), se construyó la UI (vista previa + detección de duplicados) en Temario.
+7. Dashboard no pasaba `materiaId` a `get-estudiantes-riesgo`/`get-semaforo-cursos`/`get-stats` (mezclaba materias).
+8. `get-stats` contaba estudiantes de cursos archivados en el total.
+9. Cuaderno anecdótico: tipo `'general'` (nota rápida del Espacio del curso) no estaba en `TIPOS_OBS`, se mostraba mal etiquetado.
+10. Cursos: sin validación de nombre vacío (backend) ni duplicado (frontend) — agregadas.
+11. Título de pestaña Cursos tenía un "TEST" pegado desde v1.2.0 — corregido.
+
+Versión bump a `1.5.1` en `package.json` (todo el ciclo fue de fixes, sin features grandes nuevas — la única excepción es el punto 6, que completa una función que ya estaba documentada en el PRD pero nunca tuvo UI).
 
 ### Ciclo v1.5.0 (completado)
 
@@ -65,6 +96,34 @@ Ubicación: `%APPDATA%\sistema-academico-docente\`
 
 ---
 
+## Checklist de cierre v1.5.1
+
+- [x] 11 bugs encontrados y corregidos en ronda de pruebas end-to-end (ver § arriba y `PRD.md` § 8)
+- [x] Bump versión a `1.5.1` en `package.json`
+- [x] `PRD.md` y este `HANDOVER.md` actualizados con el resumen de fixes
+- [ ] `npm run build-app` — generar `.exe`
+- [ ] Probar `.exe` instalado
+- [ ] Decidir si limpiar los datos de prueba de la BD antes o después de probar el instalador (ver nota abajo)
+- [ ] `git push` + crear release `v1.5.1` en GitHub con `.exe` adjunto
+
+---
+
+## Checklist de cierre v1.6.0
+
+- [x] Pase de animaciones con skill `emil-design-eng` (loading states, toasts, modales, semáforo) — ver `PRD.md` § 9
+- [x] Bug de carrera en cambio de período del Dashboard, encontrado y corregido
+- [x] Función nueva: generación de reportes por lote (Reportes.jsx + IPC `generar-reportes-lote` + bridge `preload.js`)
+- [x] Probado con datos reales (6to A/B/C FIHR, P1) — 17 PDFs verificados, no solo build
+- [x] Bump versión a `1.6.0` en `package.json`
+- [x] `PRD.md` y este `HANDOVER.md` actualizados
+- [x] Commit local del ciclo completo
+- [ ] `npm run build-app` — generar `.exe`
+- [ ] Probar `.exe` instalado en ubicación limpia (particularmente: el botón nuevo "Generar reporte por lote" en Reportes)
+- [ ] Decidir si limpiar los datos de prueba de la BD (sigue sin tocar, a propósito — ver nota abajo)
+- [ ] `git push` + crear release `v1.6.0` en GitHub con `.exe` adjunto
+
+---
+
 ## Próximo bloque grande
 
 ### App de Orientación / Supervisor
@@ -79,10 +138,16 @@ Segunda aplicación de escritorio para el orientador o director del centro. Obje
 
 ## Notas para la próxima sesión
 
-- La BD actual puede tener warnings de `Científica`/`Ética` — no es un bug de la app, es estado de datos. Resolverlo antes de hacer el build final.
-- Los datos de prueba en la BD (actividades FIHR, etc.) pueden borrarse en cualquier momento con `limpiar-datos-prueba.py`, pero hacer backup antes.
-- El `.exe` aún no se ha generado para v1.5.0. No publicar la release hasta haber probado el instalador en una ubicación limpia.
+- **La BD de producción tiene datos de prueba sin limpiar, a propósito** (pendiente de decisión, no borrar todavía):
+  - Curso "6to A FIHR": estudiantes `Prueba 01`–`Prueba 10` (códigos `PRUEBA-01`..`PRUEBA-10`) con calificaciones en los 4 períodos, más `TEST Estudiante A` (código `TEST-A`, solo con notas en P1).
+  - Cursos `6to B FIHR` y `6to C FIHR` completos (duplicados de la estructura de 6to A), cada uno con 1 estudiante de prueba calificado.
+  - Un curso "Curso Prueba Fase B TEMP" archivado (soft-delete, no aparece en ningún listado, se dejó así para no perder la evidencia de que el archivado funciona).
+  - Temario y cuaderno anecdótico de prueba en 6to A / P1.
+  - Decidir con el usuario si se limpia antes o después de probar el instalador de v1.5.1.
+- El `.exe` de v1.6.0 aún no se ha generado / está en curso — no publicar la release hasta haber probado el instalador, en particular el botón nuevo "Generar reporte por lote" de Reportes.
+- Las pruebas del lote de reportes se hicieron contra una **copia** de la BD (en un directorio temporal fuera del repo), nunca contra la BD real — los datos de prueba (`Prueba 01`–`10`, `6to B`/`6to C`, `TEST Estudiante A`) siguen intactos y sin limpiar, a propósito.
 - El auto-update apunta a `NuevaAlianza/sistema-academico-docente` en GitHub. Verificar que el repo existe y tiene acceso antes del release.
+- Migración de nombres de competencias (`Científica`→`Pensamiento Logico`, `Ética`→`Tecnologica`) ya fue ejecutada en la BD de producción durante el ciclo v1.5.0 — no debería haber warnings de nombres viejos.
 
 ---
 

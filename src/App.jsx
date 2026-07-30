@@ -11,6 +11,7 @@ import Calificaciones from './pages/Calificaciones'
 import Configuracion from './pages/Configuracion'
 import Backup from './pages/Backup'
 import CursoEspacio from './pages/CursoEspacio'
+import Reportes from './pages/Reportes'
 
 export default function App() {
   const [anio,     setAnio]     = useState(null)
@@ -86,6 +87,7 @@ export default function App() {
       <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'#EEF2F7' }}>
         <div style={{ textAlign:'center', color:'#1B3A6B' }}>
           <div style={{ fontSize:32, marginBottom:12 }}>📘</div>
+          <div className="spinner" style={{ margin:'0 auto 10px' }} />
           <div style={{ fontSize:16, fontWeight:600 }}>Cargando...</div>
         </div>
       </div>
@@ -136,6 +138,7 @@ export default function App() {
           <Route path="temario"        element={<Temario        {...commonProps} />} />
           <Route path="configuracion"  element={<Configuracion  {...commonProps} onRecargarMaterias={recargarMaterias} />} />
           <Route path="curso/:cursoId" element={<CursoEspacio   {...commonProps} />} />
+          <Route path="reportes" element={<Reportes {...commonProps} />} />
           <Route path="backup"         element={<Backup />} />
         </Route>
       </Routes>

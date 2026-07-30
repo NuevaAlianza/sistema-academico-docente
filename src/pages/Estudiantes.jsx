@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useModalTransition } from '../hooks/useModalTransition'
 
 const VACIO = { nombre:'', codigo:'', numero:'' }
 const COLORES_PER = ['#2563A8','#00695C','#5C2D91','#1A6B3A']
 const TIPOS_OBS = [
-  { key:'academico', label:'Académico', color:'#2563A8', bg:'#D6E4F7' },
-  { key:'conducta',  label:'Conducta',  color:'#B71C1C', bg:'#FDDFDF' },
-  { key:'familiar',  label:'Familiar',  color:'#00695C', bg:'#D0EDE8' },
-  { key:'salud',     label:'Salud',     color:'#5C2D91', bg:'#EDE0F7' },
+  { key:'academico', label:'Académico',   color:'#2563A8', bg:'#D6E4F7' },
+  { key:'conducta',  label:'Conducta',    color:'#B71C1C', bg:'#FDDFDF' },
+  { key:'familiar',  label:'Familiar',    color:'#00695C', bg:'#D0EDE8' },
+  { key:'salud',     label:'Salud',       color:'#5C2D91', bg:'#EDE0F7' },
+  { key:'general',   label:'Nota rápida', color:'#7A5C00', bg:'#FFF8D6' },
 ]
 
 export default function Estudiantes({ anio, materia }) {
@@ -30,6 +32,10 @@ export default function Estudiantes({ anio, materia }) {
   const [perfil,          setPerfil]          = useState(null)
   const [perfilData,      setPerfilData]      = useState(null)
   const [cargandoPerfil,  setCargandoPerfil]  = useState(false)
+  const perfilT      = useModalTransition(perfil)
+  const modalT       = useModalTransition(modal)
+  const modalImportT = useModalTransition(modalImport)
+  const confirmT     = useModalTransition(confirm)
 
   useEffect(() => {
     if (!anio) return
@@ -421,18 +427,18 @@ export default function Estudiantes({ anio, materia }) {
       </div>
 
       {/* ── MODAL PERFIL ── */}
-      {perfil && (
-        <div style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}
+      {perfilT && (
+        <div className="modal-backdrop" data-closing={perfilT.closing} style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}
           onClick={e => { if (e.target===e.currentTarget) setPerfil(null) }}>
-          <div style={{ background:'#fff', borderRadius:14, width:640, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004', overflow:'hidden' }}>
+          <div className="modal-content" data-closing={perfilT.closing} style={{ background:'#fff', borderRadius:14, width:640, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004', overflow:'hidden' }}>
             <div style={{ background:`linear-gradient(135deg,${color},${color}CC)`, padding:'20px 24px', display:'flex', alignItems:'center', gap:16 }}>
               <div style={{ width:52, height:52, borderRadius:'50%', background:'rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:22, fontWeight:800, color:'#fff', flexShrink:0 }}>
-                {perfil.nombre_completo.charAt(0).toUpperCase()}
+                {perfilT.value.nombre_completo.charAt(0).toUpperCase()}
               </div>
               <div style={{ flex:1 }}>
-                <div style={{ color:'#fff', fontWeight:800, fontSize:18 }}>{perfil.nombre_completo}</div>
+                <div style={{ color:'#fff', fontWeight:800, fontSize:18 }}>{perfilT.value.nombre_completo}</div>
                 <div style={{ color:'rgba(255,255,255,0.75)', fontSize:12, marginTop:2 }}>
-                  {cursoSel?.nombre}{materia?' · '+materia.nombre:''}{perfil.codigo_unico?' · '+perfil.codigo_unico:''}
+                  {cursoSel?.nombre}{materia?' · '+materia.nombre:''}{perfilT.value.codigo_unico?' · '+perfilT.value.codigo_unico:''}
                 </div>
               </div>
               <button onClick={exportarPerfilPDF} style={{ padding:'8px 16px', background:'rgba(255,255,255,0.2)', border:'1.5px solid rgba(255,255,255,0.5)', borderRadius:8, color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer' }}>📄 PDF</button>
@@ -440,9 +446,12 @@ export default function Estudiantes({ anio, materia }) {
             </div>
 
             {cargandoPerfil ? (
-              <div style={{ padding:40, textAlign:'center', color:'#AAA' }}>⏳ Cargando datos...</div>
+              <div style={{ padding:40, textAlign:'center', color:'#AAA' }}>
+                <div className="spinner" style={{ margin:'0 auto 8px' }} />
+                Cargando datos...
+              </div>
             ) : perfilData ? (
-              <div style={{ flex:1, overflowY:'auto', padding:20, display:'flex', flexDirection:'column', gap:14 }}>
+              <div className="content-fade-in" style={{ flex:1, overflowY:'auto', padding:20, display:'flex', flexDirection:'column', gap:14 }}>
                 {/* Calificaciones */}
                 <div style={{ borderRadius:12, border:'1px solid #DDE3ED', overflow:'hidden' }}>
                   <div style={{ padding:'10px 16px', background:'#1B3A6B', color:'#9BBFED', fontSize:11, fontWeight:700, letterSpacing:1.2 }}>
@@ -526,10 +535,10 @@ export default function Estudiantes({ anio, materia }) {
       )}
 
       {/* ── MODAL AGREGAR/EDITAR ── */}
-      {modal && (
-        <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+      {modalT && (
+        <div className="modal-backdrop" data-closing={modalT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
           onClick={e => { if (e.target===e.currentTarget) setModal(false) }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:28, width:400, boxShadow:'0 16px 48px #0004' }}>
+          <div className="modal-content" data-closing={modalT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:400, boxShadow:'0 16px 48px #0004' }}>
             <h2 style={{ color:'#1B3A6B', marginBottom:20, fontSize:17 }}>{editId?'✏️ Editar':'+ Nuevo'} Estudiante</h2>
             {[
               {label:'Nombre completo *',key:'nombre',placeholder:'Ej: Juan Pérez'},
@@ -552,10 +561,10 @@ export default function Estudiantes({ anio, materia }) {
       )}
 
       {/* ── MODAL IMPORTAR ── */}
-      {modalImport && (
-        <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+      {modalImportT && (
+        <div className="modal-backdrop" data-closing={modalImportT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
           onClick={e => { if (e.target===e.currentTarget) setModalImport(false) }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:28, width:560, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
+          <div className="modal-content" data-closing={modalImportT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:560, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
             <h2 style={{ color:'#1B3A6B', marginBottom:6, fontSize:17 }}>📥 Importar Estudiantes</h2>
             <p style={{ color:'#888', fontSize:12, marginBottom:16 }}>Importando a: <strong style={{ color:cursoSel?.color }}>{cursoSel?.nombre}</strong></p>
             <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:10, padding:12, marginBottom:14, fontSize:12 }}>
@@ -610,14 +619,14 @@ export default function Estudiantes({ anio, materia }) {
       )}
 
       {/* ── MODAL CONFIRMAR ── */}
-      {confirm && (
-        <div style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:700 }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:28, width:400, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
+      {confirmT && (
+        <div className="modal-backdrop" data-closing={confirmT.closing} style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:700 }}>
+          <div className="modal-content" data-closing={confirmT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:400, boxShadow:'0 16px 48px #0004', textAlign:'center' }}>
             <div style={{ fontSize:40, marginBottom:12 }}>⚠️</div>
-            <div style={{ fontSize:14, color:'#1B3A6B', marginBottom:20, lineHeight:1.6, whiteSpace:'pre-line' }}>{confirm.msg}</div>
+            <div style={{ fontSize:14, color:'#1B3A6B', marginBottom:20, lineHeight:1.6, whiteSpace:'pre-line' }}>{confirmT.value.msg}</div>
             <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
               <button onClick={() => setConfirm(null)} style={{ padding:'9px 24px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555', fontWeight:600 }}>Cancelar</button>
-              <button onClick={() => { const fn=confirm.fn; setConfirm(null); fn() }} style={{ padding:'9px 24px', background:'#B71C1C', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>Confirmar</button>
+              <button onClick={() => { const fn=confirmT.value.fn; setConfirm(null); fn() }} style={{ padding:'9px 24px', background:'#B71C1C', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>Confirmar</button>
             </div>
           </div>
         </div>

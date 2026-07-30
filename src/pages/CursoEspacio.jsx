@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
+import { useModalTransition } from '../hooks/useModalTransition'
 
 // ── Semáforo ──────────────────────────────────────────────────
 const SEM = {
@@ -64,6 +65,7 @@ export default function CursoEspacio({ anio, materia }) {
 
   // ── Bloque: Nota rápida estudiante ────────────────────────
   const [popupNota,    setPopupNota]    = useState(null) // { est }
+  const popupNotaT = useModalTransition(popupNota)
   const [notaTxt,      setNotaTxt]      = useState('')
   const [guardandoNota,setGuardandoNota]= useState(false)
 
@@ -573,9 +575,9 @@ export default function CursoEspacio({ anio, materia }) {
           </div>
 
           {tabSem === 'semaforo' && (
-            cargandoSem ? <div style={{ padding:32, textAlign:'center', color:'#AAA' }}>Cargando...</div>
-            : semaforo.length === 0 ? <div style={{ padding:32, textAlign:'center', color:'#AAA', fontStyle:'italic' }}>Sin datos para este período.</div>
-            : <div style={{ maxHeight:400, overflowY:'auto' }}>
+            cargandoSem ? <div style={{ padding:32, textAlign:'center', color:'#AAA' }}><div className="spinner" style={{ margin:'0 auto 8px' }} />Cargando...</div>
+            : semaforo.length === 0 ? <div className="content-fade-in" style={{ padding:32, textAlign:'center', color:'#AAA', fontStyle:'italic' }}>Sin datos para este período.</div>
+            : <div className="content-fade-in" style={{ maxHeight:400, overflowY:'auto' }}>
                 <div style={{ display:'grid', gridTemplateColumns:'36px 1fr 110px 120px', gap:8, padding:'7px 18px', background:'#F8FAFD', borderBottom:'1px solid #E8EDF5' }}>
                   {['#','Estudiante','Promedio','Asistencia'].map(h => <div key={h} style={{ fontSize:10, fontWeight:700, color:'#AAB4C4' }}>{h}</div>)}
                 </div>
@@ -591,11 +593,11 @@ export default function CursoEspacio({ anio, materia }) {
           )}
 
           {tabSem === 'sinnota' && (
-            cargandoSem ? <div style={{ padding:32, textAlign:'center', color:'#AAA' }}>Cargando...</div>
-            : !sinNota?.actividad ? <div style={{ padding:32, textAlign:'center', color:'#AAA', fontStyle:'italic' }}>No hay actividades en este período.</div>
+            cargandoSem ? <div style={{ padding:32, textAlign:'center', color:'#AAA' }}><div className="spinner" style={{ margin:'0 auto 8px' }} />Cargando...</div>
+            : !sinNota?.actividad ? <div className="content-fade-in" style={{ padding:32, textAlign:'center', color:'#AAA', fontStyle:'italic' }}>No hay actividades en este período.</div>
             : sinNota.sin_nota.length === 0
-              ? <div style={{ padding:24, textAlign:'center', color:'#1A6B3A', fontSize:13 }}>✅ Todos tienen nota.</div>
-              : <div style={{ maxHeight:320, overflowY:'auto' }}>
+              ? <div className="content-fade-in" style={{ padding:24, textAlign:'center', color:'#1A6B3A', fontSize:13 }}>✅ Todos tienen nota.</div>
+              : <div className="content-fade-in" style={{ maxHeight:320, overflowY:'auto' }}>
                   {sinNota.sin_nota.map((est, idx) => (
                     <div key={est.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 18px', borderBottom:idx<sinNota.sin_nota.length-1?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
                       <span style={{ fontSize:12, color:'#AAA', fontWeight:600, minWidth:24 }}>{est.numero_lista||idx+1}</span>
@@ -655,12 +657,12 @@ export default function CursoEspacio({ anio, materia }) {
       )}
 
       {/* ── POPUP NOTA ESTUDIANTE ──────────────────────────── */}
-      {popupNota && (
-        <div style={{ position:'fixed', inset:0, background:'#0004', display:'flex', alignItems:'center', justifyContent:'center', zIndex:900 }}
+      {popupNotaT && (
+        <div className="modal-backdrop" data-closing={popupNotaT.closing} style={{ position:'fixed', inset:0, background:'#0004', display:'flex', alignItems:'center', justifyContent:'center', zIndex:900 }}
           onClick={e => { if (e.target===e.currentTarget) setPopupNota(null) }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:24, width:380, boxShadow:'0 16px 48px #0004' }}>
+          <div className="modal-content" data-closing={popupNotaT.closing} style={{ background:'#fff', borderRadius:14, padding:24, width:380, boxShadow:'0 16px 48px #0004' }}>
             <div style={{ fontWeight:700, color:'#1B3A6B', fontSize:15, marginBottom:4 }}>
-              ✏ Nota para {popupNota.nombre_completo.split(' ').slice(0,2).join(' ')}
+              ✏ Nota para {popupNotaT.value.nombre_completo.split(' ').slice(0,2).join(' ')}
             </div>
             <div style={{ fontSize:12, color:'#888', marginBottom:14 }}>{hoy}</div>
             <textarea value={notaTxt} onChange={e => setNotaTxt(e.target.value)}

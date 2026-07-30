@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import PlanClase from './PlanClase'
-import { useLocation } from 'react-router-dom' 
+import { useLocation } from 'react-router-dom'
+import { useModalTransition } from '../hooks/useModalTransition'
 // Carga imágenes locales via IPC (evita bloqueo de file:// en Electron)
 function ImgLocal({ ruta, style, onClick }) {
   const [src, setSrc] = React.useState(null)
@@ -54,6 +55,16 @@ export default function Temario({anio,materia}){
   const [temaEdit,   setTemaEdit]   =useState(null)
   const [lightbox,   setLightbox]   =useState(null)
   const [lightboxSrc,setLightboxSrc]=useState(null)
+  const [modalImportar,setModalImportar]=useState(false)
+  const [importJson,   setImportJson]   =useState(null)
+  const [importPreview,setImportPreview]=useState(null)
+  const [importResumen,setImportResumen]=useState(null)
+  const [importando,   setImportando]   =useState(false)
+  const confirmT      = useModalTransition(confirm)
+  const modalClonarT  = useModalTransition(modalClonar)
+  const modalImportarT= useModalTransition(modalImportar)
+  const modalArchT    = useModalTransition(modalArch)
+  const temaEditT     = useModalTransition(temaEdit)
 
   useEffect(() => {
     if (!anio) return
@@ -147,6 +158,49 @@ export default function Temario({anio,materia}){
   }
   function onDragEnd(){if(dragNode.current)dragNode.current.style.opacity='1';setDragIdx(null);setDragOver(null);dragNode.current=null}
 
+  // Misma logica de match que db.importTemarioJson (numero_orden o nombre del periodo),
+  // para poder mostrar la vista previa antes de tocar la BD.
+  function calcularPreviewImport(jsonData){
+    const porPeriodo=[],noMatchean=[]
+    ;(jsonData.periodos||[]).forEach(p=>{
+      const periodo=periodos.find(dbP=>dbP.numero_orden===p.numero||dbP.nombre===p.nombre)
+      const nTemas=(p.temas||[]).length
+      if(!periodo){noMatchean.push({id:p.numero??p.nombre??'?',nTemas});return}
+      porPeriodo.push({nombre:periodo.nombre,nTemas})
+    })
+    return {porPeriodo,noMatchean}
+  }
+
+  async function seleccionarJsonTemario(){
+    const res=await window.api.invoke('seleccionar-json-temario')
+    if(!res)return
+    if(res.error){alert(res.error);return}
+    if(!res.jsonData||!Array.isArray(res.jsonData.periodos)){
+      alert('El JSON no tiene la estructura esperada: falta el campo "periodos".');return
+    }
+    setImportJson(res)
+    setImportPreview(calcularPreviewImport(res.jsonData))
+    setImportResumen(null)
+    setModalImportar(true)
+  }
+
+  async function confirmarImportarTemario(){
+    if(!importJson||!cursoSel)return
+    setImportando(true)
+    const res=await window.api.invoke('import-temario-json',{
+      jsonData:importJson.jsonData,cursoId:cursoSel.id,materiaId,anioId:anio.id,
+    })
+    setImportando(false)
+    if(res&&res.error){alert('Error al importar: '+res.error);return}
+    setImportResumen(res)
+    cargarTemas()
+  }
+
+  function cerrarModalImportar(){
+    if(importando)return
+    setModalImportar(false);setImportJson(null);setImportPreview(null);setImportResumen(null)
+  }
+
   function abrirClonar(){setClonDest([]);setModalClonar(true)}
   function toggleClon(id){setClonDest(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id])}
   async function ejecutarClonar(){
@@ -170,6 +224,10 @@ export default function Temario({anio,materia}){
       setArchivos(lista)
       toast2('📎 Archivo adjuntado')
     }
+  }
+  async function abrirArchivo(a){
+    const r=await window.api.invoke('abrir-archivo',a.ruta)
+    if(r&&r.ok===false) toast2('⚠️ No se pudo abrir: '+(r.error||'error desconocido'))
   }
   async function eliminarArchivo(a){
     pedirConfirm(`¿Eliminar "${a.nombre}"?`,async()=>{
@@ -244,6 +302,7 @@ export default function Temario({anio,materia}){
               <div style={{fontSize:30,fontWeight:900}}>{progreso}%</div>
               <div style={{fontSize:11,opacity:.8}}>{realizados}/{temas.length} temas</div>
             </div>
+            <button onClick={seleccionarJsonTemario} style={{padding:'8px 14px',background:'rgba(255,255,255,.2)',border:'1.5px solid rgba(255,255,255,.5)',borderRadius:8,color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>📥 Importar JSON</button>
             {temas.length>0&&cursosOtros.length>0&&(
               <button onClick={abrirClonar} style={{padding:'8px 14px',background:'rgba(255,255,255,.2)',border:'1.5px solid rgba(255,255,255,.5)',borderRadius:8,color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>📋 Clonar</button>
             )}
@@ -293,37 +352,38 @@ export default function Temario({anio,materia}){
       </div>
 
       {/* MODAL Plan de Clase */}
-      {temaEdit&&(
+      {temaEditT&&(
         <PlanClase
-          tema={temaEdit}
+          tema={temaEditT.value}
           materia={materia}
           periodoColor={colPer}
           cursos={cursos}
           anioId={anio?.id}
           onSave={handleSavePlan}
           onClose={()=>setTemaEdit(null)}
+          closing={temaEditT.closing}
         />
       )}
 
       {/* MODAL Confirmar */}
-      {confirm&&(
-        <div style={{position:'fixed',inset:0,background:'#0006',display:'flex',alignItems:'center',justifyContent:'center',zIndex:600}}>
-          <div style={{background:'#fff',borderRadius:14,padding:28,width:360,boxShadow:'0 16px 48px #0004',textAlign:'center'}}>
+      {confirmT&&(
+        <div className="modal-backdrop" data-closing={confirmT.closing} style={{position:'fixed',inset:0,background:'#0006',display:'flex',alignItems:'center',justifyContent:'center',zIndex:600}}>
+          <div className="modal-content" data-closing={confirmT.closing} style={{background:'#fff',borderRadius:14,padding:28,width:360,boxShadow:'0 16px 48px #0004',textAlign:'center'}}>
             <div style={{fontSize:32,marginBottom:10}}>⚠️</div>
-            <div style={{fontSize:15,fontWeight:700,color:'#1B3A6B',marginBottom:8}}>{confirm.msg}</div>
+            <div style={{fontSize:15,fontWeight:700,color:'#1B3A6B',marginBottom:8}}>{confirmT.value.msg}</div>
             <div style={{fontSize:12,color:'#888',marginBottom:20}}>Esta acción no se puede deshacer.</div>
             <div style={{display:'flex',gap:10,justifyContent:'center'}}>
               <button onClick={()=>setConfirm(null)} style={{padding:'9px 24px',background:'#EEF2F7',border:'1px solid #DDE3ED',borderRadius:8,fontSize:13,cursor:'pointer',color:'#555',fontWeight:600}}>Cancelar</button>
-              <button onClick={()=>{const fn=confirm.fn;setConfirm(null);fn()}} style={{padding:'9px 24px',background:'#B71C1C',color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer'}}>Eliminar</button>
+              <button onClick={()=>{const fn=confirmT.value.fn;setConfirm(null);fn()}} style={{padding:'9px 24px',background:'#B71C1C',color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer'}}>Eliminar</button>
             </div>
           </div>
         </div>
       )}
 
       {/* MODAL Clonar */}
-      {modalClonar&&(
-        <div style={{position:'fixed',inset:0,background:'#0005',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500}} onClick={e=>{if(e.target===e.currentTarget)setModalClonar(false)}}>
-          <div style={{background:'#fff',borderRadius:14,padding:28,width:420,boxShadow:'0 16px 48px #0004'}}>
+      {modalClonarT&&(
+        <div className="modal-backdrop" data-closing={modalClonarT.closing} style={{position:'fixed',inset:0,background:'#0005',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500}} onClick={e=>{if(e.target===e.currentTarget)setModalClonar(false)}}>
+          <div className="modal-content" data-closing={modalClonarT.closing} style={{background:'#fff',borderRadius:14,padding:28,width:420,boxShadow:'0 16px 48px #0004'}}>
             <h2 style={{color:'#1B3A6B',marginBottom:6,fontSize:17}}>📋 Clonar temas</h2>
             <p style={{color:'#888',fontSize:12,marginBottom:16}}>Copiando <strong>{temas.length} temas</strong> de <strong style={{color:colPer}}>{perSel?.nombre}</strong> de <strong style={{color:cursoSel?.color}}>{cursoSel?.nombre}</strong> a:</p>
             <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
@@ -345,16 +405,78 @@ export default function Temario({anio,materia}){
         </div>
       )}
 
+      {/* MODAL Importar temario JSON */}
+      {modalImportarT&&(
+        <div className="modal-backdrop" data-closing={modalImportarT.closing} style={{position:'fixed',inset:0,background:'#0005',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500}} onClick={e=>{if(e.target===e.currentTarget)cerrarModalImportar()}}>
+          <div className="modal-content" data-closing={modalImportarT.closing} style={{background:'#fff',borderRadius:14,padding:28,width:480,maxHeight:'80vh',overflowY:'auto',boxShadow:'0 16px 48px #0004'}}>
+            <h2 style={{color:'#1B3A6B',marginBottom:6,fontSize:17}}>📥 Importar temario (JSON)</h2>
+            <p style={{color:'#888',fontSize:12,marginBottom:16}}>
+              Archivo: <strong>{importJson?.archivo}</strong><br/>
+              Destino: <strong style={{color:cursoSel?.color}}>{cursoSel?.nombre}</strong>{materia?' · '+materia.nombre:''}
+            </p>
+
+            {!importResumen ? (
+              <>
+                {importPreview?.porPeriodo.length>0&&(
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#1A6B3A',marginBottom:6}}>✓ Períodos que coinciden:</div>
+                    {importPreview.porPeriodo.map((p,i)=>(
+                      <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 10px',background:'#F0FDF4',borderRadius:8,marginBottom:4,fontSize:13}}>
+                        <span style={{fontWeight:600,color:'#166534'}}>{p.nombre}</span>
+                        <span style={{color:'#166534'}}>{p.nTemas} tema{p.nTemas!==1?'s':''}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {importPreview?.noMatchean.length>0&&(
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#B71C1C',marginBottom:6}}>⚠️ No coinciden con ningún período del año activo (se omitirán):</div>
+                    {importPreview.noMatchean.map((p,i)=>(
+                      <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 10px',background:'#FDDFDF',borderRadius:8,marginBottom:4,fontSize:13}}>
+                        <span style={{fontWeight:600,color:'#B71C1C'}}>"{p.id}"</span>
+                        <span style={{color:'#B71C1C'}}>{p.nTemas} tema{p.nTemas!==1?'s':''}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {importPreview&&importPreview.porPeriodo.length===0&&importPreview.noMatchean.length===0&&(
+                  <p style={{color:'#888',fontSize:13,fontStyle:'italic'}}>El archivo no tiene un campo "periodos" con contenido.</p>
+                )}
+                <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:10}}>
+                  <button onClick={cerrarModalImportar} disabled={importando} style={{padding:'9px 20px',background:'#EEF2F7',border:'1px solid #DDE3ED',borderRadius:8,fontSize:13,cursor:'pointer',color:'#555'}}>Cancelar</button>
+                  <button onClick={confirmarImportarTemario} disabled={importando||!importPreview?.porPeriodo.length}
+                    style={{padding:'9px 24px',background:importPreview?.porPeriodo.length?'#1B3A6B':'#CCC',color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:importPreview?.porPeriodo.length?'pointer':'default'}}>
+                    {importando?'⏳ Importando...':'📥 Importar'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:10,padding:14,marginBottom:14}}>
+                  <div style={{fontSize:14,fontWeight:700,color:'#166534',marginBottom:6}}>✓ Importación completada</div>
+                  <div style={{fontSize:13,color:'#166534'}}>{importResumen.count} tema{importResumen.count!==1?'s':''} nuevo{importResumen.count!==1?'s':''} importado{importResumen.count!==1?'s':''}</div>
+                  {importResumen.omitidos>0&&<div style={{fontSize:13,color:'#7A5C00',marginTop:4}}>{importResumen.omitidos} ya {importResumen.omitidos!==1?'existían':'existía'} y se {importResumen.omitidos!==1?'omitieron':'omitió'} (duplicados)</div>}
+                  {importResumen.periodosNoEncontrados?.length>0&&<div style={{fontSize:13,color:'#B71C1C',marginTop:4}}>{importResumen.periodosNoEncontrados.length} período(s) del archivo no coincidieron: {importResumen.periodosNoEncontrados.map(x=>`"${x}"`).join(', ')}</div>}
+                </div>
+                <div style={{display:'flex',justifyContent:'flex-end'}}>
+                  <button onClick={cerrarModalImportar} style={{padding:'9px 24px',background:'#1B3A6B',color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer'}}>Cerrar</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* MODAL Archivos — con visor de imágenes */}
-      {modalArch&&(
-        <div style={{position:'fixed',inset:0,background:'#0005',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500}} onClick={e=>{if(e.target===e.currentTarget)setModalArch(null)}}>
-          <div style={{background:'#fff',borderRadius:14,padding:28,width:560,maxHeight:'80vh',display:'flex',flexDirection:'column',boxShadow:'0 16px 48px #0004'}}>
+      {modalArchT&&(
+        <div className="modal-backdrop" data-closing={modalArchT.closing} style={{position:'fixed',inset:0,background:'#0005',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500}} onClick={e=>{if(e.target===e.currentTarget)setModalArch(null)}}>
+          <div className="modal-content" data-closing={modalArchT.closing} style={{background:'#fff',borderRadius:14,padding:28,width:560,maxHeight:'80vh',display:'flex',flexDirection:'column',boxShadow:'0 16px 48px #0004'}}>
 
             {/* Cabecera */}
             <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
               <span style={{fontSize:22}}>📎</span>
               <div>
-                <div style={{fontWeight:800,fontSize:15,color:'#1B3A6B'}}>{modalArch.titulo}</div>
+                <div style={{fontWeight:800,fontSize:15,color:'#1B3A6B'}}>{modalArchT.value.titulo}</div>
                 <div style={{fontSize:12,color:'#888'}}>Archivos adjuntos</div>
               </div>
               <div style={{flex:1}}/>
@@ -396,7 +518,7 @@ export default function Temario({anio,materia}){
                           🔍 Ver
                         </button>
                       )}
-                      <button onClick={()=>window.api.invoke('abrir-archivo',a.ruta)} style={{padding:'4px 10px',background:'#EEF2F7',border:'1px solid #DDE3ED',borderRadius:6,fontSize:11,cursor:'pointer',color:'#1B3A6B',fontWeight:600}}>
+                      <button onClick={()=>abrirArchivo(a)} style={{padding:'4px 10px',background:'#EEF2F7',border:'1px solid #DDE3ED',borderRadius:6,fontSize:11,cursor:'pointer',color:'#1B3A6B',fontWeight:600}}>
                         Abrir
                       </button>
                       <button onClick={()=>eliminarArchivo(a)} style={{background:'none',border:'none',color:'#CCC',fontSize:14,cursor:'pointer',padding:'4px 6px'}}
@@ -413,9 +535,11 @@ export default function Temario({anio,materia}){
       {/* LIGHTBOX — visor de imagen a pantalla completa */}
       {lightbox&&(
         <div
+          className="modal-backdrop"
           onClick={()=>{setLightbox(null);setLightboxSrc(null)}}
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.88)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:700,cursor:'zoom-out',padding:24}}>
           <img
+            className="modal-content"
             src={lightboxSrc}
             alt="Vista completa"
             style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:8,boxShadow:'0 8px 40px rgba(0,0,0,.6)'}}

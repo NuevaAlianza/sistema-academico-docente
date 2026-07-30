@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
+import { useModalTransition } from '../hooks/useModalTransition'
 
 const ESTADOS = [
   { key:'presente', label:'P', titulo:'Presente', bg:'#D6EEE0', color:'#1A6B3A', borde:'#A8D4B8' },
@@ -8,10 +9,11 @@ const ESTADOS = [
   { key:'excusado', label:'E', titulo:'Excusado', bg:'#EDE0F7', color:'#5C2D91', borde:'#C0A0E0' },
 ]
 const TIPOS_OBS = [
-  { key:'academico', label:'Academico', color:'#2563A8', bg:'#D6E4F7' },
-  { key:'conducta',  label:'Conducta',  color:'#B71C1C', bg:'#FDDFDF' },
-  { key:'familiar',  label:'Familiar',  color:'#00695C', bg:'#D0EDE8' },
-  { key:'salud',     label:'Salud',     color:'#5C2D91', bg:'#EDE0F7' },
+  { key:'academico', label:'Academico',   color:'#2563A8', bg:'#D6E4F7' },
+  { key:'conducta',  label:'Conducta',    color:'#B71C1C', bg:'#FDDFDF' },
+  { key:'familiar',  label:'Familiar',    color:'#00695C', bg:'#D0EDE8' },
+  { key:'salud',     label:'Salud',       color:'#5C2D91', bg:'#EDE0F7' },
+  { key:'general',   label:'Nota rapida', color:'#7A5C00', bg:'#FFF8D6' },
 ]
 const DIAS_ORDEN  = ['Lunes','Martes','Miercoles','Jueves','Viernes']
 const DIAS_NOMBRE = { Lunes:'Lun', Martes:'Mar', Miercoles:'Mie', Jueves:'Jue', Viernes:'Vie' }
@@ -85,8 +87,10 @@ export default function Asistencia({ anio, materia }) {
   const [lista,         setLista]         = useState([])
   const [mesAnio,       setMesAnio]       = useState(mesActual())
   const [mesDatos,      setMesDatos]      = useState({ estudiantes:[], asistencias:[] })
-  const [toast,         setToast]         = useState(null)
+  const [toast,         setToast]         = useState(null) // { msg, leaving }
+  const toastGen = useRef(0)
   const [modalObs,      setModalObs]      = useState(null)
+  const modalObsT = useModalTransition(modalObs)
   const [obsForm,       setObsForm]       = useState({ texto:'', tipo:'academico' })
   const [obsLista,      setObsLista]      = useState([])
   const [diaValido,     setDiaValido]     = useState(true)
@@ -145,7 +149,12 @@ useEffect(() => {
     }
   }, [cursoSel, fecha, modo, mesAnio, diasClase])
 
-  function toast2(msg) { setToast(msg); setTimeout(() => setToast(null), 2000) }
+  function toast2(msg) {
+    const gen = ++toastGen.current
+    setToast({ msg, leaving:false })
+    setTimeout(() => { if (toastGen.current===gen) setToast(t => t && ({ ...t, leaving:true })) }, 1800)
+    setTimeout(() => { if (toastGen.current===gen) setToast(null) }, 2000)
+  }
 
   async function marcar(estudianteId, estado) {
     await window.api.invoke('set-asistencia', { estudianteId, cursoId:cursoSel.id, fecha, estado, materiaId })
@@ -585,14 +594,14 @@ useEffect(() => {
       </div>
 
       {/* MODAL OBSERVACIONES */}
-      {modalObs && (
-        <div style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+      {modalObsT && (
+        <div className="modal-backdrop" data-closing={modalObsT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
           onClick={e => { if (e.target===e.currentTarget) setModalObs(null) }}>
-          <div style={{ background:'#fff', borderRadius:14, padding:28, width:520, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
+          <div className="modal-content" data-closing={modalObsT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:520, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:20 }}>
               <span style={{ fontSize:22 }}>📓</span>
               <div>
-                <div style={{ fontWeight:800, fontSize:16, color:'#1B3A6B' }}>{modalObs.nombre_completo}</div>
+                <div style={{ fontWeight:800, fontSize:16, color:'#1B3A6B' }}>{modalObsT.value.nombre_completo}</div>
                 <div style={{ fontSize:12, color:'#888' }}>Cuaderno Anecdotico</div>
               </div>
               <div style={{ flex:1 }} />
@@ -649,7 +658,7 @@ useEffect(() => {
       )}
 
       {toast && (
-        <div style={{ position:'fixed', bottom:24, right:24, background:'#1A6B3A', color:'#fff', padding:'10px 20px', borderRadius:10, fontSize:13, fontWeight:600, boxShadow:'0 4px 16px #0003', zIndex:999 }}>{toast}</div>
+        <div className="toast" data-leaving={toast.leaving}>{toast.msg}</div>
       )}
     </div>
   )

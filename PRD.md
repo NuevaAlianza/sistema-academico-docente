@@ -1,8 +1,8 @@
 # PRD — Product Requirements Document
 # Sistema Académico Docente
 
-**Versión:** 1.5.0  
-**Fecha:** 2026-06-08  
+**Versión:** 1.6.0  
+**Fecha:** 2026-07-30  
 **Estado:** Producción
 
 ---
@@ -33,10 +33,10 @@ Vista general del estado del año escolar activo. Muestra conteo de cursos y est
 Grilla visual de días × bloques (lunes–viernes). El maestro asigna un curso + materia a cada celda. Permite filtrar por materia.
 
 ### Cursos
-CRUD de cursos del año activo (nombre, grado, sección, color). Cada curso tiene un **Espacio** privado con nota rápida libre, anotaciones con fecha e historial de promedios por período.
+CRUD de cursos del año activo (nombre, grado, sección, color) — nombre obligatorio y sin duplicados exactos dentro del mismo año, validado en frontend y backend. "Eliminar" es soft-delete (el curso y sus datos históricos quedan en la BD, solo deja de listarse). Cada curso tiene un **Espacio** privado con nota rápida libre, anotaciones con fecha e historial de promedios por período.
 
 ### Estudiantes
-Padrón de alumnos por curso: CRUD manual o importación masiva desde Excel/CSV. Cuaderno de observaciones por estudiante. Historial de promedios por período.
+Padrón de alumnos por curso: CRUD manual o importación masiva desde Excel/CSV. Cuaderno de observaciones por estudiante (5 tipos: académico, conducta, familiar, salud, nota rápida) — se agrega desde el ícono 📓 en Asistencia (con selector de tipo) o el ícono ✏ en el Espacio del curso (nota rápida sin selector). Historial de promedios por período.
 
 ### Asistencia
 Registro diario por curso con estados: presente, ausente, tardanza, excusado. Vista mensual con resumen por estudiante. Filtro por materia.
@@ -49,10 +49,12 @@ Módulo central. Dos modos:
 Incluye promedio ponderado del período, resumen por competencia, exportación a PDF y Excel.
 
 ### Temario
-CRUD de temas con título, estado y fecha. Reordenamiento por drag. Plan de clase con metadatos enriquecidos (subtítulo, semana, fase, competencia, indicadores). Clonar temario entre cursos, sincronizar plan a múltiples cursos, importar desde JSON, adjuntar archivos.
+CRUD de temas con título, estado y fecha. Reordenamiento por drag. Plan de clase con metadatos enriquecidos (subtítulo, semana, fase, competencia, indicadores) — se puede armar a mano, copiando un prompt para pegar en una IA externa (Claude.ai) e importando el JSON que devuelve, o adjuntando archivos sueltos al tema. Clonar temario entre cursos, sincronizar plan a múltiples cursos. **Import masivo de temario desde un archivo JSON** (varios períodos/temas de una vez): vista previa antes de guardar (temas por período, períodos que no matchean), detección de duplicados por curso+período+materia+título.
 
 ### Reportes
-Reporte grupal (promedio + asistencia + temas por curso/período) y reporte individual (detalle completo del estudiante). Exportación PDF con jsPDF. Exportación de calificaciones a Excel.
+Reporte grupal (promedio + asistencia + temas por curso/período) y reporte individual (detalle completo del estudiante). Exportación PDF vía impresión (`window.print()`). Exportación de calificaciones a Excel.
+
+**Generación por lote**: el maestro elige un grado, una o varias secciones (checkboxes) y un período, y la app genera de una sola vez el PDF grupal de cada sección elegida más el PDF individual de cada estudiante de esas secciones, todos en una carpeta nueva con nombre descriptivo (`Reportes_<grado><secciones>_<período>_<fecha>/`). Cada PDF individual se nombra `<grado><sección>_<número de lista>_<nombre-slugificado>.pdf` para poder identificarlo sin abrirlo. Sin diálogo de guardado por archivo — un único diálogo de carpeta al inicio, y una barra de progreso en vivo mientras se generan.
 
 ### Configuración
 Nombre del maestro y centro educativo. Pesos de evaluación (actividades, participación, asistencia, conducta). Mínimo aprobatorio y umbrales del semáforo. CRUD de materias (máximo 3 por año). Gestión de años escolares y períodos.
@@ -146,3 +148,48 @@ Los umbrales son configurables por el maestro.
 - Exportación Excel con columnas de distribución multi por competencia (actualmente solo exporta la nota global).
 - Reporte anual consolidado de boletines.
 - Importación/exportación masiva de estudiantes entre años escolares.
+- Selector de período del Dashboard: hoy siempre abre en el primer período del año (nada cambia el campo `estado` de un período de `'abierto'` a otro valor), no en el período vigente por fecha. Evaluar si conviene calcularlo por `fecha_inicio`/`fecha_fin` o agregar un control manual.
+
+---
+
+## 8. Fixes de la ronda de pruebas v1.5.1 (2026-07-20)
+
+Ronda de pruebas funcionales end-to-end (calificaciones multi-competencia, reportes, temario, cuaderno anecdótico, dashboard/semáforo, CRUD de cursos) con datos reales y aislados. Bugs encontrados y corregidos:
+
+1. **`getReporteGrupal` mezclaba notas entre materias** — el promedio del Reporte Grupal no filtraba por `materia_id`, mezclando calificaciones de todas las materias de un curso. Corregido agregando el filtro, igual que el resto de las queries de `database.js`.
+2. **"Nota final" del período distinta entre pantallas** — el tab "Multi" de Calificaciones promediaba las 4 competencias en partes iguales; Reportes ponderaba por el peso real de cada actividad. Podían diferir más de 10 puntos y cruzar el umbral de aprobación. Se unificó: ambas pantallas usan ahora el promedio ponderado por peso.
+3. **Tab "Simple" de Calificaciones mal interpretaba actividades en modo `multi`** — las agrupaba todas bajo la competencia legacy de la actividad en vez de excluirlas (se resumen aparte vía `distribucion_multi`). También afectaba el PDF de "Registro de Calificaciones".
+4. **Panel lateral "Competencias" de Calificaciones** — mismo problema que el punto 3, en el conteo de actividades por competencia.
+5. **`abrir-archivo` (adjuntos de Temario) tragaba errores en silencio** — no se hacía `await` del resultado de `shell.openPath`; ahora se revisa y se avisa al maestro si falla.
+6. **Import masivo de temario vía JSON no tenía UI** — el backend (`importTemarioJson`) existía pero no había botón en ninguna pantalla. Se construyó la UI en Temario (vista previa + detección de duplicados).
+7. **Dashboard mezclaba datos entre materias** — `get-estudiantes-riesgo`, `get-semaforo-cursos` y `get-stats` no recibían `materiaId` desde `Dashboard.jsx` pese a que las funciones de `database.js` ya lo soportaban.
+8. **`get-stats` contaba estudiantes de cursos archivados** — el conteo de "Estudiantes" no filtraba por `cursos.estado='activo'`, a diferencia del conteo de "Cursos".
+9. **Cuaderno anecdótico: tipo `'general'` (nota rápida desde el Espacio del curso) no estaba en `TIPOS_OBS`** — se mostraba mal etiquetado como "Académico". Se agregó como quinto tipo ("Nota rápida").
+10. **Cursos: nombre vacío o duplicado no se validaba** — ahora se valida nombre no vacío en frontend y backend, y nombre duplicado (exacto, dentro del mismo año) en frontend.
+11. Título de la pestaña Cursos tenía un "TEST" pegado desde v1.2.0 ("Cursos / Materias TEST") — corregido.
+
+No se tocó el esquema de BD ni las fórmulas de cálculo de §4/§5 (siguen vigentes tal cual están documentadas arriba) — todos los fixes fueron de queries faltando un filtro, parámetros no propagados, o UI faltante/inconsistente.
+
+---
+
+## 9. Ronda v1.6.0 (2026-07-30) — Animaciones + Reportes por lote
+
+### Pase de diseño con la skill `emil-design-eng`
+
+Instalada a nivel de proyecto (`.claude/skills/emil-design-eng`) y aplicada en un diagnóstico priorizado de toda la UI. Cambios implementados (todos vía CSS `@starting-style`/`transition`, sin librería de animación nueva):
+
+- **Loading states**: los `"Cargando..."` / `"⏳ Calculando..."` en texto plano (Dashboard, CursoEspacio, Reportes, Configuración, Estudiantes, App.jsx) ahora muestran un spinner (`.spinner`) y el contenido hace fade-in (`.content-fade-in`) al llegar.
+- **Toasts** (Calificaciones, Asistencia): entrada y salida animadas (`.toast` + `[data-leaving]`) en vez de aparecer/desaparecer de golpe.
+- **Modales** (los ~24 en Layout, Cursos, Estudiantes, Temario, Calificaciones, Asistencia, Configuración, CursoEspacio, PlanClase, Backup): fade del backdrop + scale/fade del contenido al abrir y cerrar, vía el hook nuevo `src/hooks/useModalTransition.js` — mantiene el modal montado ~160ms extra al cerrar para que la transición de salida se vea, sin cambiar cuándo/por qué se abre o cierra cada uno. Los dos lightbox de imagen (Temario, PlanClase) solo tienen fade de entrada — la lógica de cierre limpia el estado de la imagen en el mismo click, así que retrasar el desmontaje mostraría un ícono roto.
+- **Semáforo del Dashboard**: las barras verde/ámbar/rojo pasaron de `width` a `clip-path` (recomendado por la skill sobre `transform:scaleX()` para este caso, porque son 3 segmentos co-dependientes, no un único elemento moviéndose) con grow-in en cada actualización de período.
+- **Fix de bug preexistente, encontrado al animar el semáforo**: cambiar de período varias veces seguido podía hacer que la respuesta de un período viejo llegara después que la del nuevo y pisara los datos en pantalla (carrera de promesas). Se agregó un contador de "solicitud más reciente" (`semRequestId`) en `Dashboard.jsx` que descarta silenciosamente las respuestas obsoletas.
+
+### Generación de reportes por lote (Reportes.jsx)
+
+Ver §3 "Reportes" arriba para la descripción funcional. Notas de implementación relevantes:
+
+- Las funciones que arman el HTML del reporte (`construirHTMLGrupal`, `construirHTMLIndividual`) se separaron de la apertura de ventana/impresión (`exportarPDFGrupal`, `exportarPDFIndividual`), que se mantienen sin cambios para los botones "🖨️ Exportar PDF" existentes.
+- El lote **no** usa `window.print()` — usa `webContents.printToPDF()` de Electron sobre una ventana oculta reutilizada secuencialmente, con un único diálogo de carpeta al inicio (`generar-reportes-lote` en `electron/main.js`). Se descartó `.zip` (no había librería en el proyecto y no hacía falta agregar una) a favor de una carpeta con nombre descriptivo.
+- **Bug encontrado en pruebas reales** (no solo build): el HTML reusado incluía `<script>window.onload=()=>window.print()</script>` para el flujo interactivo; `printToPDF()` lo rechaza ("Scripted print is not supported"). Se agregó un flag `autoprint` a ambas funciones constructoras de HTML — el lote pasa `autoprint:false` y el script no se incluye.
+- Progreso en vivo durante la generación vía un bridge nuevo en `preload.js` (`window.api.on(canal, cb)`) — hasta ahora el preload solo exponía `invoke` (request/response).
+- Probado con datos reales de los cursos 6to A/B/C FIHR (P1): 17 PDFs generados (3 grupales + 14 individuales), validados con `pdftotext` (nombre, promedio, competencias correctos por estudiante).
