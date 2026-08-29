@@ -1,15 +1,23 @@
 # HANDOVER.md — Estado actual del proyecto
 # Sistema Académico Docente
 
-**Versión:** 1.6.0  
-**Fecha:** 2026-07-30  
-**Estado:** Estable — pase de animaciones + generación de reportes por lote completados, build en curso
+**Versión:** 1.6.0 (sin bump todavía — hay código nuevo sin versionar, ver abajo)
+**Fecha:** 2026-08-29
+**Estado:** Estable — integración con Portal-Ars (padrón + reporte del maestro) completa y pusheada a `origin/main` (`6760210..d475b83`), sin `.exe` generado todavía
 
 ---
 
 ## Lo último que se hizo
 
-### Importación de padrón completo por grado+sección (nuevo, sin versionar todavía)
+### Integración con Portal-Ars — completa en ambos repos, pusheada, sin bump de versión
+
+**Estado final (2026-08-29): las 3 piezas de esta integración están terminadas, probadas de punta a punta contra datos/Supabase reales, y pusheadas.** Lado sistema-docente: commits `ca969ba` (padrón) + `d475b83` (export) en `origin/main`. Lado Portal-Ars (repo separado `NuevaAlianza/Portal-Ars`): commits `1e6906c` (RPCs + pantalla admin + tarjeta del estudiante) + `f0a3827` (pulido visual de competencias) en su `origin/main` — ver la memoria de esa sesión (`project_sync_sistema_docente.md`) para el detalle completo del lado Portal-Ars.
+
+**Lo que falta para que esto sea usable por el maestro en su PC**: nada de código — falta el empaquetado. `npm run build-app` para generar el `.exe` y publicar un release en GitHub. **No se hizo en esta sesión a propósito** — el usuario prefirió no bumpear versión hasta confirmar que todo el flujo funciona (ver AGENTS.md: "no actualizar la versión en package.json hasta que el usuario confirme que está listo"). Cuando se retome: decidir el número de versión (¿1.7.0? hay 2 features nuevas, no solo fixes) y seguir el checklist de cierre de un ciclo normal (ver checklists de v1.5.x/v1.6.0 abajo como plantilla).
+
+**Confirmado con el usuario, no re-litigar**: el "Promedio de tu sección" que ve el estudiante en Portal-Ars (Tanda 19 de ese proyecto) y el reporte del maestro de esta integración son y deben seguir siendo **números independientes** — no se mezclan. Miden cosas distintas (exámenes del portal vs. evaluación diaria del maestro).
+
+### Importación de padrón completo por grado+sección (pusheado, commit `ca969ba`)
 
 Contexto: se está evaluando compartir el padrón de estudiantes con Portal-Ars (portal web separado de la misma institución, Supabase). En vez de una sincronización en vivo (rompería el diseño 100% offline de esta app), se acordó un archivo compartido que cualquiera de los dos sistemas puede generar/consumir.
 
@@ -18,9 +26,8 @@ Contexto: se está evaluando compartir el padrón de estudiantes con Portal-Ars 
 - `previewImportPadron`/`confirmarImportPadron` en `database.js` + `abrir-archivo-padron`/`preview-import-padron`/`confirmar-import-padron` en `main.js` — agrupa por grado+sección, empareja contra `cursos` activos del año (`WHERE estado='activo'`, nunca reutiliza uno archivado), y dentro de cada curso empareja estudiante por `numero_lista` (no por nombre, a diferencia del import existente) — actualiza el nombre si cambió, inserta si es nuevo, no toca nada si ya coincide.
 - Un grupo grado+sección sin curso existente **no se crea solo** — aparece en la vista previa con un checkbox "Crear curso" que el maestro tiene que marcar a propósito; si no lo marca, se omite sin tocar nada (se puede reintentar después con un archivo corregido).
 - **Verificado (no solo build)**: se copió `sistema_docente.db` real a un directorio temporal fuera del repo y se replicó la lógica exacta de `previewImportPadron`/`confirmarImportPadron` en Python contra esa copia (no se tocó la BD real en ningún momento) — casos probados: fila igual a lo existente (sin cambios), fila con nombre distinto en el mismo número de lista (actualiza), número de lista nuevo (inserta), grupo sin curso sin marcar crear (se omite, no crea nada), mismo grupo confirmando crear (crea el curso y el estudiante), y correr el mismo archivo una tercera vez completa (todo queda en "sin cambios" — confirma que es seguro repetir la importación). `npx vite build` corrido para confirmar que el JSX nuevo compila sin errores.
-- **Pendiente real**: esto es la mitad de la integración — falta el lado que genera el archivo desde Portal-Ars (o donde sea que viva la fuente de verdad del padrón) y decidir cuál sistema es la fuente. No se tocó nada del lado de Portal-Ars en esta sesión.
 
-### Exportar promedio de período + asistencia para Portal-Ars (nuevo, sin versionar todavía)
+### Exportar promedio de período + asistencia para Portal-Ars (pusheado, commit `d475b83`)
 
 Segunda parte de la integración con Portal-Ars, en sentido contrario al padrón: acá sistema-docente genera el archivo (nunca lo recibe). Pensado para que el estudiante vea en Portal-Ars el promedio del maestro (no solo sus notas de examen del portal) y su asistencia — datos que hoy Portal-Ars no tiene en absoluto.
 
@@ -30,7 +37,7 @@ Segunda parte de la integración con Portal-Ars, en sentido contrario al padrón
 - Archivo CSV con columnas `grado,seccion,numero_orden,materia,periodo,promedio_general,promedio_comunicativa,promedio_pensamiento_logico,promedio_civica,promedio_tecnologica,actividades_calificadas,actividades_planeadas,asist_presentes,asist_ausentes,asist_tardanzas,asist_excusados` -- sin nombre (Portal-Ars ya lo tiene, se empareja por grado+sección+número igual que el padrón).
 - `guardar-csv-portal-ars` en `main.js`: mismo patrón que `backup-exportar-excel` (dialog.showSaveDialog + escribir a disco), no un download de navegador.
 - **Verificado con datos reales de producción** (no sintéticos): curso "6to A FIHR", período 1, materia "Mi Materia" ya tenía calificaciones reales cargadas (6 actividades, modo multi, con `distribucion_multi`). Se replicó la función exacta en Python contra una copia de la BD real y se confirmó a mano el promedio general de un estudiante (58, verificado con la suma ponderada manual). Después se corrió la app Electron real (vía Playwright + `--user-data-dir` apuntando a otra copia) generando el archivo real desde la UI real -- el CSV resultante coincide línea por línea con el cálculo independiente en Python. La BD real (`%APPDATA%`) nunca se tocó en ningún momento de la prueba.
-- **Pendiente real**: falta construir en Portal-Ars la pantalla de admin que reciba este archivo (emparejando por grado+sección+número contra `estudiantes_lista`), el cálculo de avance real/proyección, y la tarjeta nueva donde el estudiante lo vería.
+- **Del lado de Portal-Ars** (ya construido y pusheado, commit `1e6906c` de ese repo): pantalla de admin que recibe este archivo (empareja por grado+sección+número contra `estudiantes_lista`, nunca crea estudiantes), tabla `reportes_maestro` con upsert por estudiante+materia+periodo (sin historial, decisión confirmada), y una tarjeta nueva en "Mis notas" del estudiante con el cálculo de avance real (`promedio × actividades_calificadas/actividades_planeadas`) y proyección — ese cálculo vive ahí, no acá. Probado con un curso completo (varios estudiantes, notas y asistencia variadas) y con un estudiante de competencias desbalanceadas a propósito, ambos vía la app Electron real contra copias sandbox + el Portal-Ars real.
 
 ### Ciclo v1.6.0 (completado — animaciones + reportes por lote)
 
@@ -161,6 +168,7 @@ Segunda aplicación de escritorio para el orientador o director del centro. Obje
 
 ## Notas para la próxima sesión
 
+- **Integración con Portal-Ars completa y pusheada (`ca969ba`, `d475b83`), pero sin `.exe` ni bump de versión** — ver sección de arriba. Antes de generar el instalador, probar con un roster real (no de prueba) una vez que el curso tenga estudiantes reales cargados — hoy "6to A FIHR" solo tiene estudiantes de prueba (ver punto siguiente).
 - **La BD de producción tiene datos de prueba sin limpiar, a propósito** (pendiente de decisión, no borrar todavía):
   - Curso "6to A FIHR": estudiantes `Prueba 01`–`Prueba 10` (códigos `PRUEBA-01`..`PRUEBA-10`) con calificaciones en los 4 períodos, más `TEST Estudiante A` (código `TEST-A`, solo con notas en P1).
   - Cursos `6to B FIHR` y `6to C FIHR` completos (duplicados de la estructura de 6to A), cada uno con 1 estudiante de prueba calificado.
