@@ -832,6 +832,92 @@ deleteEstudiante(id) {
     };
   }
 
+  // ── Exportar para Portal-Ars (padrón + promedio/asistencia) ─────
+  // Mismos números que ya muestran el Reporte grupal/individual (promedio
+  // general ponderado real, y el desglose por competencia -- misma
+  // fórmula de simple/multi que getReporteIndividual, duplicada acá
+  // adrede en vez de refactorizar esa función ya en uso por los PDFs).
+  // Solo manda los números crudos: el cálculo de "avance real"/
+  // "proyección" según actividades planeadas vs calificadas se hace del
+  // lado de Portal-Ars, no acá.
+  getExportPortalArs(cursoId, periodoId, materiaId) {
+    const curso = this.db.prepare("SELECT grado,seccion FROM cursos WHERE id=?").get(cursoId);
+    const estudiantes = this.db.prepare(
+      "SELECT id, numero_lista FROM estudiantes WHERE curso_id=? AND estado='activo' ORDER BY numero_lista"
+    ).all(cursoId);
+
+    const actQ = materiaId
+      ? "SELECT COUNT(DISTINCT a.id) as n FROM actividades a JOIN calificaciones c ON c.actividad_id=a.id WHERE a.curso_id=? AND a.periodo_id=? AND a.materia_id=? AND c.nota IS NOT NULL"
+      : "SELECT COUNT(DISTINCT a.id) as n FROM actividades a JOIN calificaciones c ON c.actividad_id=a.id WHERE a.curso_id=? AND a.periodo_id=? AND c.nota IS NOT NULL";
+    const actParams = materiaId ? [cursoId, periodoId, materiaId] : [cursoId, periodoId];
+    const actividadesCalificadas = (this.db.prepare(actQ).get(...actParams) || { n: 0 }).n;
+
+    const filas = estudiantes.map(est => {
+      const notasQ = materiaId
+        ? "SELECT c.nota, a.peso FROM calificaciones c JOIN actividades a ON c.actividad_id=a.id WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=? AND a.materia_id=? AND c.nota IS NOT NULL"
+        : "SELECT c.nota, a.peso FROM calificaciones c JOIN actividades a ON c.actividad_id=a.id WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=? AND c.nota IS NOT NULL";
+      const notasParams = materiaId ? [est.id, cursoId, periodoId, materiaId] : [est.id, cursoId, periodoId];
+      const notas = this.db.prepare(notasQ).all(...notasParams);
+      let promedioGeneral = null;
+      if (notas.length > 0) {
+        const pesoTotal = notas.reduce((s, n) => s + n.peso, 0);
+        if (pesoTotal > 0) promedioGeneral = Math.round(notas.reduce((s, n) => s + n.nota * n.peso, 0) / pesoTotal);
+      }
+
+      // Desglose por competencia -- misma fórmula que getReporteIndividual
+      const actividades = materiaId
+        ? this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=? ORDER BY id").all(cursoId, periodoId, materiaId)
+        : this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? ORDER BY id").all(cursoId, periodoId);
+      const compMap = {};
+      for (const act of actividades) {
+        const calif = this.db.prepare("SELECT nota, distribucion_multi FROM calificaciones WHERE actividad_id=? AND estudiante_id=?").get(act.id, est.id);
+        if (!calif || calif.nota === null) continue;
+        if (act.modo === 'multi') {
+          const comps = JSON.parse(act.competencias_multi || '[]');
+          const n = comps.length;
+          if (n === 0) continue;
+          const techo    = 100 / n;
+          const pesoComp = act.peso / n;
+          const dist     = calif.distribucion_multi ? JSON.parse(calif.distribucion_multi) : null;
+          for (const c of comps) {
+            const pts       = dist ? (dist[c] ?? 0) : (calif.nota / n);
+            const nota_comp = (pts / techo) * 100;
+            if (!compMap[c]) compMap[c] = { suma: 0, peso: 0 };
+            compMap[c].suma += nota_comp * pesoComp;
+            compMap[c].peso += pesoComp;
+          }
+        } else {
+          const key = act.competencia || 'Sin competencia';
+          if (!compMap[key]) compMap[key] = { suma: 0, peso: 0 };
+          compMap[key].suma += calif.nota * act.peso;
+          compMap[key].peso += act.peso;
+        }
+      }
+      const comp = (nombre) => (compMap[nombre] && compMap[nombre].peso > 0) ? Math.round(compMap[nombre].suma / compMap[nombre].peso) : null;
+
+      // Asistencia acumulada del curso -- la tabla asistencias no guarda
+      // periodo_id, misma limitación que ya tiene getReporteGrupal.
+      const asistRows = this.db.prepare("SELECT estado, COUNT(*) as n FROM asistencias WHERE estudiante_id=? AND curso_id=? GROUP BY estado").all(est.id, cursoId);
+      const am = {};
+      asistRows.forEach(r => { am[r.estado] = r.n; });
+
+      return {
+        numero_orden: est.numero_lista,
+        promedio_general: promedioGeneral,
+        promedio_comunicativa: comp('Comunicativa'),
+        promedio_pensamiento_logico: comp('Pensamiento Logico'),
+        promedio_civica: comp('Civica'),
+        promedio_tecnologica: comp('Tecnologica'),
+        asist_presentes: am['presente'] || 0,
+        asist_ausentes:  am['ausente']  || 0,
+        asist_tardanzas: am['tardanza'] || 0,
+        asist_excusados: am['excusado'] || 0,
+      };
+    });
+
+    return { grado: curso?.grado || '', seccion: curso?.seccion || '', actividades_calificadas: actividadesCalificadas, estudiantes: filas };
+  }
+
   // ── Reporte individual ────────────────────────────────────────
   // Devuelve detalle completo de un estudiante: promedio por competencia,
   // asistencia desglosada, lista de temas con estado y observaciones.

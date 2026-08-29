@@ -599,6 +599,15 @@ export default function Reportes({ anio, materia }) {
   const modalLoteT   = useModalTransition(modalLote)
   const loteToastGen = useRef(0)
 
+  // ── Exportar para Portal-Ars ─────────────────────────────────────────────
+  const [modalArs,          setModalArs]          = useState(false)
+  const [arsGrado,          setArsGrado]          = useState('')
+  const [arsSecciones,      setArsSecciones]      = useState([]) // ids de curso elegidos
+  const [arsPeriodoId,      setArsPeriodoId]      = useState(null)
+  const [arsActPlaneadas,   setArsActPlaneadas]   = useState('')
+  const [arsGenerando,      setArsGenerando]      = useState(false)
+  const modalArsT = useModalTransition(modalArs)
+
   // Cargar cursos y períodos al montar
   useEffect(() => {
     if (!anio) return
@@ -646,6 +655,68 @@ export default function Reportes({ anio, materia }) {
 
   function toggleSeccion(cursoId) {
     setLoteSecciones(prev => prev.includes(cursoId) ? prev.filter(id => id !== cursoId) : [...prev, cursoId])
+  }
+
+  function toggleSeccionArs(cursoId) {
+    setArsSecciones(prev => prev.includes(cursoId) ? prev.filter(id => id !== cursoId) : [...prev, cursoId])
+  }
+
+  function abrirModalArs() {
+    setArsGrado('')
+    setArsSecciones([])
+    setArsPeriodoId(periodoSel?.id || null)
+    setArsActPlaneadas('')
+    setModalArs(true)
+  }
+
+  function csvEscape(v) {
+    const s = v === null || v === undefined ? '' : String(v)
+    return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""') + '"' : s
+  }
+
+  async function generarExportArs() {
+    const periodoObj = periodos.find(p => p.id === arsPeriodoId)
+    const cursosSel  = cursos.filter(c => arsSecciones.includes(c.id))
+    const actPlan    = parseInt(arsActPlaneadas, 10)
+    if (!periodoObj || cursosSel.length === 0 || !actPlan || actPlan < 1) return
+
+    setArsGenerando(true)
+    const materiaNombre = materia?.nombre || 'General'
+    const headers = ['grado','seccion','numero_orden','materia','periodo',
+      'promedio_general','promedio_comunicativa','promedio_pensamiento_logico','promedio_civica','promedio_tecnologica',
+      'actividades_calificadas','actividades_planeadas','asist_presentes','asist_ausentes','asist_tardanzas','asist_excusados']
+    const filas = [headers.join(',')]
+
+    for (const curso of cursosSel) {
+      const datos = await window.api.invoke('get-export-portal-ars', curso.id, periodoObj.id, materia?.id || null)
+      datos.estudiantes.forEach(e => {
+        filas.push([
+          datos.grado, datos.seccion, e.numero_orden, materiaNombre, periodoObj.numero_orden,
+          e.promedio_general, e.promedio_comunicativa, e.promedio_pensamiento_logico, e.promedio_civica, e.promedio_tecnologica,
+          datos.actividades_calificadas, actPlan,
+          e.asist_presentes, e.asist_ausentes, e.asist_tardanzas, e.asist_excusados,
+        ].map(csvEscape).join(','))
+      })
+    }
+
+    const fechaISO = new Date().toISOString().slice(0, 10)
+    const nombreSugerido = `PortalArs_${arsGrado}_P${periodoObj.numero_orden}_${slug(materiaNombre)}_${fechaISO}.csv`
+
+    try {
+      const res = await window.api.invoke('guardar-csv-portal-ars', filas.join('\n'), nombreSugerido)
+      setArsGenerando(false)
+      if (res.cancelado) return
+      if (res.ok) {
+        setModalArs(false)
+        const carpeta = res.ruta.substring(0, Math.max(res.ruta.lastIndexOf('\\'), res.ruta.lastIndexOf('/')))
+        mostrarLoteToast(`✅ Archivo generado — ${filas.length - 1} fila(s)`, carpeta)
+      } else {
+        alert('Error generando el archivo: ' + (res.error || 'desconocido'))
+      }
+    } catch (e) {
+      setArsGenerando(false)
+      alert('Error generando el archivo: ' + e.message)
+    }
   }
 
   function abrirModalLote() {
@@ -753,6 +824,10 @@ export default function Reportes({ anio, materia }) {
           {/* Generar reporte por lote */}
           <button onClick={abrirModalLote} style={{ padding: '7px 14px', background: '#fff', border: '1.5px solid #DDE3ED', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: COLOR_BASE }}>
             📦 Generar reporte por lote
+          </button>
+          {/* Exportar para Portal-Ars */}
+          <button onClick={abrirModalArs} style={{ padding: '7px 14px', background: '#F0FDF4', border: '1.5px solid #86EFAC', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#166534' }}>
+            📤 Exportar para Portal-Ars
           </button>
         </div>
       </div>
@@ -904,6 +979,107 @@ export default function Reportes({ anio, materia }) {
                   }}
                 >
                   📦 Generar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EXPORTAR PARA PORTAL-ARS */}
+      {modalArsT && (
+        <div className="modal-backdrop" data-closing={modalArsT.closing} style={{ position: 'fixed', inset: 0, background: '#0005', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500 }}
+          onClick={e => { if (e.target === e.currentTarget && !arsGenerando) setModalArs(false) }}>
+          <div className="modal-content" data-closing={modalArsT.closing} style={{ background: '#fff', borderRadius: 14, padding: 28, width: 480, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 16px 48px #0004' }}>
+            <h2 style={{ color: '#166534', marginBottom: 6, fontSize: 17 }}>📤 Exportar para Portal-Ars</h2>
+            <p style={{ color: '#888', fontSize: 12, marginBottom: 20 }}>
+              Genera un archivo con el promedio del período (general y por competencia) y la asistencia de cada estudiante de las secciones elegidas, para subirlo a Portal-Ars.
+            </p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={S.label}>Grado</label>
+              <select
+                value={arsGrado}
+                onChange={e => { setArsGrado(e.target.value); setArsSecciones([]) }}
+                style={{ ...S.sel, width: '100%' }}
+                disabled={arsGenerando}
+              >
+                <option value="">— Selecciona un grado —</option>
+                {grados.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+
+            {arsGrado && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={S.label}>Secciones</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {cursos.filter(c => c.grado === arsGrado).map(c => (
+                    <label key={c.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
+                      border: '1.5px solid ' + (arsSecciones.includes(c.id) ? '#166534' : '#DDE3ED'),
+                      background: arsSecciones.includes(c.id) ? '#F0FDF4' : '#fff',
+                      cursor: 'pointer', fontSize: 13,
+                    }}>
+                      <input type="checkbox" checked={arsSecciones.includes(c.id)} onChange={() => toggleSeccionArs(c.id)} disabled={arsGenerando} />
+                      {c.seccion || c.nombre}
+                    </label>
+                  ))}
+                  {cursos.filter(c => c.grado === arsGrado).length === 0 && <span style={{ color: '#AAA', fontSize: 12 }}>No hay secciones para este grado.</span>}
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={S.label}>Período</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {periodos.map(p => (
+                  <label key={p.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
+                    border: '1.5px solid ' + (arsPeriodoId === p.id ? '#166534' : '#DDE3ED'),
+                    background: arsPeriodoId === p.id ? '#F0FDF4' : '#fff',
+                    cursor: 'pointer', fontSize: 13,
+                  }}>
+                    <input type="radio" name="ars-periodo" checked={arsPeriodoId === p.id} onChange={() => setArsPeriodoId(p.id)} disabled={arsGenerando} />
+                    {p.nombre}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={S.label}>¿Cuántas actividades en total vas a calificar este período?</label>
+              <input
+                type="number" min="1" value={arsActPlaneadas}
+                onChange={e => setArsActPlaneadas(e.target.value)}
+                placeholder="Ej: 6"
+                disabled={arsGenerando}
+                style={{ ...S.sel, width: '100%' }}
+              />
+              <p style={{ color: '#AAB4C4', fontSize: 11.5, marginTop: 4 }}>
+                Portal-Ars usa este número junto con las que ya calificaste para mostrarle al estudiante un avance real del período, no solo el promedio de lo hecho hasta ahora.
+              </p>
+            </div>
+
+            {arsGenerando ? (
+              <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                <div className="spinner" style={{ margin: '0 auto 10px' }} />
+                <div style={{ fontSize: 13, color: '#555' }}>Generando archivo...</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setModalArs(false)} style={{ padding: '9px 20px', background: '#EEF2F7', border: '1px solid #DDE3ED', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#555' }}>
+                  Cancelar
+                </button>
+                <button
+                  onClick={generarExportArs}
+                  disabled={!arsGrado || arsSecciones.length === 0 || !arsPeriodoId || !arsActPlaneadas || Number(arsActPlaneadas) < 1}
+                  style={{
+                    padding: '9px 24px', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                    background: (!arsGrado || arsSecciones.length === 0 || !arsPeriodoId || !arsActPlaneadas || Number(arsActPlaneadas) < 1) ? '#CCC' : '#166534',
+                    cursor: (!arsGrado || arsSecciones.length === 0 || !arsPeriodoId || !arsActPlaneadas || Number(arsActPlaneadas) < 1) ? 'default' : 'pointer',
+                  }}
+                >
+                  📤 Generar archivo
                 </button>
               </div>
             )}

@@ -209,6 +209,24 @@ ipcMain.handle('get-estudiantes-sin-nota', (_, cursoId, periodoId, materiaId) =>
 ipcMain.handle('get-reporte-individual', (_, estudianteId, cursoId, periodoId, materiaId) =>
   db.getReporteIndividual(estudianteId, cursoId, periodoId, materiaId || null));
 
+ipcMain.handle('get-export-portal-ars', (_, cursoId, periodoId, materiaId) =>
+  db.getExportPortalArs(cursoId, periodoId, materiaId || null));
+
+ipcMain.handle('guardar-csv-portal-ars', async (_, csvTexto, nombreSugerido) => {
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: 'Guardar archivo para Portal-Ars',
+    defaultPath: nombreSugerido,
+    filters: [{ name: 'CSV', extensions: ['csv'] }],
+  });
+  if (canceled || !filePath) return { cancelado: true };
+  try {
+    fs.writeFileSync(filePath, csvTexto, 'utf-8');
+    return { ok: true, ruta: filePath };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
   // ── REPORTES: GENERAR LOTE (grupal + individuales, sin diálogo por archivo) ──
   ipcMain.handle('generar-reportes-lote', async (event, { items, carpetaSugerida }) => {
     const { canceled, filePaths } = await dialog.showOpenDialog({

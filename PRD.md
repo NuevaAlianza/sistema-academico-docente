@@ -56,6 +56,8 @@ CRUD de temas con título, estado y fecha. Reordenamiento por drag. Plan de clas
 ### Reportes
 Reporte grupal (promedio + asistencia + temas por curso/período) y reporte individual (detalle completo del estudiante). Exportación PDF vía impresión (`window.print()`). Exportación de calificaciones a Excel.
 
+**Exportar para Portal-Ars** (botón aparte, junto a "Generar reporte por lote"): genera un CSV con el promedio de período (general y por las 4 competencias) y la asistencia acumulada de cada estudiante de las secciones elegidas, para subirlo al portal web del estudiante. El maestro indica cuántas actividades en total planea calificar ese período (dato que el sistema no puede inferir solo); junto con `actividades_calificadas` (que sí se cuenta solo), Portal-Ars calcula del lado suyo el "avance real" del período — no acá.
+
 **Generación por lote**: el maestro elige un grado, una o varias secciones (checkboxes) y un período, y la app genera de una sola vez el PDF grupal de cada sección elegida más el PDF individual de cada estudiante de esas secciones, todos en una carpeta nueva con nombre descriptivo (`Reportes_<grado><secciones>_<período>_<fecha>/`). Cada PDF individual se nombra `<grado><sección>_<número de lista>_<nombre-slugificado>.pdf` para poder identificarlo sin abrirlo. Sin diálogo de guardado por archivo — un único diálogo de carpeta al inicio, y una barra de progreso en vivo mientras se generan.
 
 ### Configuración
