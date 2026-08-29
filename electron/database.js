@@ -269,6 +269,69 @@ class SistemaDB {
     return { insertados, omitidos };
   }
 
+  // ── Importar padrón completo (varios cursos a la vez) ──────────
+  // Pensado para un archivo compartido con otro sistema (mismo grado/
+  // sección/número de orden que usa Portal-Ars) — agrupa las filas por
+  // grado+sección y las empareja contra los cursos activos del año.
+  // No inserta nada acá: solo arma la vista previa para que el maestro
+  // confirme, igual que el resto de los imports del proyecto.
+  previewImportPadron(anioEscolarId, filas) {
+    const cursosActivos = this.db.prepare("SELECT id,nombre,grado,seccion FROM cursos WHERE anio_escolar_id=? AND estado='activo'").all(anioEscolarId);
+    const grupos = new Map();
+    for (const f of filas) {
+      const key = f.grado + '||' + f.seccion;
+      if (!grupos.has(key)) grupos.set(key, { grado: f.grado, seccion: f.seccion, estudiantes: [] });
+      grupos.get(key).estudiantes.push({ numero: f.numero, nombre: f.nombre });
+    }
+    return Array.from(grupos.values()).map(g => {
+      const curso = cursosActivos.find(c => c.grado === g.grado && c.seccion === g.seccion);
+      g.estudiantes.sort((a, b) => a.numero - b.numero);
+      return { grado: g.grado, seccion: g.seccion, cursoId: curso ? curso.id : null, cursoNombre: curso ? curso.nombre : null, estudiantes: g.estudiantes };
+    }).sort((a, b) => a.grado.localeCompare(b.grado) || a.seccion.localeCompare(b.seccion));
+  }
+
+  // Confirma la importación de padrón ya revisada. Por cada grupo sin
+  // curso existente, solo crea uno nuevo si el maestro marcó "crear"
+  // explícitamente (grupos sin marcar se omiten, no se pierden --
+  // el maestro puede volver a intentar con un archivo corregido).
+  // Emparejamiento estudiante-a-estudiante por numero_lista dentro del
+  // curso (no por nombre): actualiza el nombre si cambió, no duplica.
+  confirmarImportPadron(anioEscolarId, grupos) {
+    let cursosCreados = 0, insertados = 0, actualizados = 0, sinCambios = 0;
+    const errores = [];
+    for (const g of grupos) {
+      let cursoId = g.cursoId;
+      if (!cursoId) {
+        if (!g.crear) continue;
+        const nombre = `${g.grado} ${g.seccion}`;
+        const dup = this.db.prepare("SELECT id FROM cursos WHERE anio_escolar_id=? AND nombre=? AND estado='activo'").get(anioEscolarId, nombre);
+        if (dup) { errores.push(`Ya existe un curso activo llamado "${nombre}" -- no se creó de nuevo, revisalo a mano.`); continue; }
+        try {
+          const r = this.createCurso({ anioId: anioEscolarId, nombre, grado: g.grado, seccion: g.seccion });
+          cursoId = r.lastInsertRowid;
+          cursosCreados++;
+        } catch (e) { errores.push(`${g.grado} ${g.seccion}: ${e.message}`); continue; }
+      }
+      for (const est of g.estudiantes) {
+        const nombre = (est.nombre || '').trim();
+        if (!nombre) continue;
+        const existente = this.db.prepare("SELECT id,nombre_completo FROM estudiantes WHERE curso_id=? AND numero_lista=? AND estado='activo'").get(cursoId, est.numero || 0);
+        if (existente) {
+          if (existente.nombre_completo !== nombre) {
+            this.db.prepare("UPDATE estudiantes SET nombre_completo=? WHERE id=?").run(nombre, existente.id);
+            actualizados++;
+          } else {
+            sinCambios++;
+          }
+        } else {
+          this.db.prepare("INSERT INTO estudiantes (curso_id,codigo_unico,numero_lista,nombre_completo) VALUES (?,?,?,?)").run(cursoId, '', est.numero || 0, nombre);
+          insertados++;
+        }
+      }
+    }
+    return { cursosCreados, insertados, actualizados, sinCambios, errores };
+  }
+
   getEstudiantesTodos(cursoId) {
   return this.db.prepare("SELECT * FROM estudiantes WHERE curso_id=? ORDER BY numero_lista, nombre_completo").all(cursoId)
 }

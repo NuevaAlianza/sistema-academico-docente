@@ -108,6 +108,68 @@ app.whenReady().then(() => {
 ipcMain.handle('get-estudiantes-todos', (_, cursoId) => db.getEstudiantesTodos(cursoId));
 ipcMain.handle('delete-estudiante',     (_, id)      => db.deleteEstudiante(id));
 
+// ── Importar padrón completo (grado+sección, varios cursos a la vez) ──
+// Mismo parser tolerante que 'abrir-archivo-estudiantes', pero acá grado/
+// sección/número son obligatorios por fila (son la llave para ubicar el
+// curso correcto) -- las filas a las que les falte alguno se descartan
+// y se informan como "inválidas" en vez de adivinar un valor.
+ipcMain.handle('abrir-archivo-padron', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: 'Seleccionar archivo del padrón (grado, sección, número, nombre)',
+    filters: [{ name: 'Excel y CSV', extensions: ['xlsx', 'xls', 'csv'] }],
+    properties: ['openFile']
+  });
+  if (canceled || filePaths.length === 0) return null;
+
+  const filePath = filePaths[0];
+  const ext = path.extname(filePath).toLowerCase();
+  let filas = [];
+
+  try {
+    if (ext === '.csv') {
+      const contenido = fs.readFileSync(filePath, 'utf-8');
+      const lineas = contenido.split(/\r?\n/).filter(l => l.trim());
+      const sep = lineas[0].includes(';') ? ';' : ',';
+      const encabezados = lineas[0].split(sep).map(h => h.trim().toLowerCase().replace(/"/g,''));
+      for (let i = 1; i < lineas.length; i++) {
+        const cols = lineas[i].split(sep).map(c => c.trim().replace(/"/g,''));
+        if (cols.every(c => !c)) continue;
+        const obj = {};
+        encabezados.forEach((h, idx) => { obj[h] = cols[idx] || ''; });
+        filas.push(obj);
+      }
+    } else {
+      const XLSX = require('xlsx');
+      const wb = XLSX.readFile(filePath);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      filas = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      filas = filas.map(f => {
+        const obj = {};
+        Object.keys(f).forEach(k => { obj[k.toLowerCase().trim()] = String(f[k]||'').trim(); });
+        return obj;
+      });
+    }
+
+    const validas = [];
+    let invalidas = 0;
+    filas.forEach(f => {
+      const grado   = (f['grado'] || '').trim();
+      const seccion = (f['seccion'] || f['sección'] || '').trim();
+      const nombre  = (f['nombre_completo'] || f['nombre completo'] || f['nombre'] || f['name'] || f['alumno'] || f['estudiante'] || '').trim();
+      const numero  = parseInt(f['numero_orden'] || f['numero'] || f['número'] || f['numero_lista'] || f['#'], 10);
+      if (!grado || !seccion || !nombre || !numero || numero < 1) { invalidas++; return; }
+      validas.push({ grado, seccion, numero, nombre });
+    });
+
+    return { filas: validas, invalidas, archivo: path.basename(filePath) };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('preview-import-padron',    (_, anioId, filas)  => db.previewImportPadron(anioId, filas));
+ipcMain.handle('confirmar-import-padron',  (_, anioId, grupos) => db.confirmarImportPadron(anioId, grupos));
+
   ipcMain.handle('get-asistencia-dia', (_, cId, fecha, mId) => db.getAsistenciaDia(cId, fecha, mId));
   ipcMain.handle('set-asistencia',     (_, d)               => db.setAsistencia(d));
   ipcMain.handle('get-asistencia-mes', (_, cId, y, m, mId)  => db.getAsistenciaMes(cId, y, m, mId));

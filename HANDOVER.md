@@ -9,6 +9,17 @@
 
 ## Lo último que se hizo
 
+### Importación de padrón completo por grado+sección (nuevo, sin versionar todavía)
+
+Contexto: se está evaluando compartir el padrón de estudiantes con Portal-Ars (portal web separado de la misma institución, Supabase). En vez de una sincronización en vivo (rompería el diseño 100% offline de esta app), se acordó un archivo compartido que cualquiera de los dos sistemas puede generar/consumir.
+
+- Nuevo botón "📥 Importar padrón completo" en Estudiantes, bajo la lista de cursos (a diferencia del import existente, que es por curso, este es para todo el año escolar de una vez).
+- Archivo requerido: columnas `grado, seccion, numero_orden, nombre` — filas sin alguno de esos 4 datos se descartan y se informan como inválidas, no se adivinan.
+- `previewImportPadron`/`confirmarImportPadron` en `database.js` + `abrir-archivo-padron`/`preview-import-padron`/`confirmar-import-padron` en `main.js` — agrupa por grado+sección, empareja contra `cursos` activos del año (`WHERE estado='activo'`, nunca reutiliza uno archivado), y dentro de cada curso empareja estudiante por `numero_lista` (no por nombre, a diferencia del import existente) — actualiza el nombre si cambió, inserta si es nuevo, no toca nada si ya coincide.
+- Un grupo grado+sección sin curso existente **no se crea solo** — aparece en la vista previa con un checkbox "Crear curso" que el maestro tiene que marcar a propósito; si no lo marca, se omite sin tocar nada (se puede reintentar después con un archivo corregido).
+- **Verificado (no solo build)**: se copió `sistema_docente.db` real a un directorio temporal fuera del repo y se replicó la lógica exacta de `previewImportPadron`/`confirmarImportPadron` en Python contra esa copia (no se tocó la BD real en ningún momento) — casos probados: fila igual a lo existente (sin cambios), fila con nombre distinto en el mismo número de lista (actualiza), número de lista nuevo (inserta), grupo sin curso sin marcar crear (se omite, no crea nada), mismo grupo confirmando crear (crea el curso y el estudiante), y correr el mismo archivo una tercera vez completa (todo queda en "sin cambios" — confirma que es seguro repetir la importación). `npx vite build` corrido para confirmar que el JSX nuevo compila sin errores.
+- **Pendiente real**: esto es la mitad de la integración — falta el lado que genera el archivo desde Portal-Ars (o donde sea que viva la fuente de verdad del padrón) y decidir cuál sistema es la fuente. No se tocó nada del lado de Portal-Ars en esta sesión.
+
 ### Ciclo v1.6.0 (completado — animaciones + reportes por lote)
 
 Detalle completo en `PRD.md` § 9. Resumen:

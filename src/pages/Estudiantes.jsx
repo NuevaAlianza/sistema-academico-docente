@@ -29,12 +29,19 @@ export default function Estudiantes({ anio, materia }) {
   const [preview,         setPreview]         = useState([])
   const [archivoNombre,   setArchivoNombre]   = useState('')
   const [importando,      setImportando]      = useState(false)
+  const [modalPadron,      setModalPadron]      = useState(false)
+  const [padronArchivo,    setPadronArchivo]    = useState('')
+  const [padronInvalidas,  setPadronInvalidas]  = useState(0)
+  const [padronGrupos,     setPadronGrupos]     = useState([])
+  const [padronCargando,   setPadronCargando]   = useState(false)
+  const [padronResultado,  setPadronResultado]  = useState(null)
   const [perfil,          setPerfil]          = useState(null)
   const [perfilData,      setPerfilData]      = useState(null)
   const [cargandoPerfil,  setCargandoPerfil]  = useState(false)
   const perfilT      = useModalTransition(perfil)
   const modalT       = useModalTransition(modal)
   const modalImportT = useModalTransition(modalImport)
+  const modalPadronT = useModalTransition(modalPadron)
   const confirmT     = useModalTransition(confirm)
 
   useEffect(() => {
@@ -169,6 +176,43 @@ export default function Estudiantes({ anio, materia }) {
     toast2(`✅ ${res.insertados} importados${res.omitidos > 0 ? ` (${res.omitidos} ya existían)` : ''}`)
   }
 
+  async function seleccionarArchivoPadron() {
+    setPadronCargando(true)
+    setPadronResultado(null)
+    try {
+      const res = await window.api.invoke('abrir-archivo-padron')
+      if (!res) { setPadronCargando(false); return }
+      if (res.error) { alert('Error: ' + res.error); setPadronCargando(false); return }
+      const grupos = await window.api.invoke('preview-import-padron', anio.id, res.filas)
+      setPadronGrupos(grupos.map(g => ({ ...g, crear: false })))
+      setPadronArchivo(res.archivo)
+      setPadronInvalidas(res.invalidas)
+    } catch(e) { alert('Error: ' + e.message) }
+    setPadronCargando(false)
+  }
+
+  function toggleCrearGrupoPadron(idx) {
+    setPadronGrupos(prev => prev.map((g, i) => i === idx ? { ...g, crear: !g.crear } : g))
+  }
+
+  async function confirmarImportPadron() {
+    setPadronCargando(true)
+    const res = await window.api.invoke('confirmar-import-padron', anio.id, padronGrupos)
+    setPadronCargando(false)
+    setPadronResultado(res)
+    setPadronGrupos([])
+    setPadronArchivo('')
+    window.api.invoke('get-cursos', anio.id).then(setCursos)
+    if (cursoSel) cargarEstudiantes()
+  }
+
+  function cerrarModalPadron() {
+    setModalPadron(false)
+    setPadronResultado(null)
+    setPadronArchivo('')
+    setPadronGrupos([])
+  }
+
   async function exportarPerfilPDF() {
     if (!perfil || !perfilData) return
     const cfg     = await window.api.invoke('get-config')
@@ -285,6 +329,10 @@ export default function Estudiantes({ anio, materia }) {
             {c.nombre}
           </div>
         ))}
+        <button onClick={() => { cerrarModalPadron(); setModalPadron(true) }}
+          style={{ width:'100%', marginTop:10, padding:'8px 6px', background:'#F0FDF4', color:'#166534', border:'1px dashed #86EFAC', borderRadius:8, fontSize:11.5, fontWeight:700, cursor:'pointer' }}>
+          📥 Importar padrón completo
+        </button>
       </div>
 
       {/* PANEL PRINCIPAL */}
@@ -613,6 +661,95 @@ export default function Estudiantes({ anio, materia }) {
                 style={{ padding:'9px 24px', background:preview.length>0?'#00695C':'#CCC', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:preview.length>0?'pointer':'default' }}>
                 {importando?'⏳ Importando...':`📥 Importar ${preview.length}`}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL IMPORTAR PADRÓN COMPLETO (varios cursos a la vez) ── */}
+      {modalPadronT && (
+        <div className="modal-backdrop" data-closing={modalPadronT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+          onClick={e => { if (e.target===e.currentTarget && !padronCargando) cerrarModalPadron() }}>
+          <div className="modal-content" data-closing={modalPadronT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:640, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
+            <h2 style={{ color:'#1B3A6B', marginBottom:6, fontSize:17 }}>📥 Importar padrón completo</h2>
+            <p style={{ color:'#888', fontSize:12, marginBottom:16 }}>
+              Un solo archivo con estudiantes de <strong>varios cursos a la vez</strong> — cada fila se ubica en el curso que coincida por grado y sección.
+            </p>
+
+            {padronResultado ? (
+              <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:10, padding:16, fontSize:13, color:'#166534' }}>
+                <div style={{ fontWeight:700, marginBottom:6 }}>✅ Importación completada</div>
+                <div>{padronResultado.cursosCreados} curso(s) creado(s), {padronResultado.insertados} estudiante(s) nuevo(s), {padronResultado.actualizados} actualizado(s), {padronResultado.sinCambios} sin cambios.</div>
+                {padronResultado.errores.length > 0 && (
+                  <div style={{ marginTop:8, color:'#991B1B' }}>
+                    {padronResultado.errores.map((e,i) => <div key={i}>⚠ {e}</div>)}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div style={{ background:'#F0FDF4', border:'1px solid #BBF7D0', borderRadius:10, padding:12, marginBottom:14, fontSize:12 }}>
+                  <div style={{ fontWeight:700, color:'#166534', marginBottom:6 }}>Columnas requeridas (todas obligatorias):</div>
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                    {['grado','seccion','numero_orden','nombre'].map(c=>(
+                      <span key={c} style={{ background:'#DCFCE7', color:'#166534', padding:'2px 8px', borderRadius:6, fontSize:11, fontWeight:600 }}>{c}</span>
+                    ))}
+                  </div>
+                </div>
+
+                {!padronArchivo ? (
+                  <button onClick={seleccionarArchivoPadron} disabled={padronCargando}
+                    style={{ padding:'12px', background:'#00695C', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', marginBottom:14 }}>
+                    {padronCargando?'⏳ Leyendo...':'📂 Seleccionar Excel o CSV'}
+                  </button>
+                ) : (
+                  <>
+                    <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12, padding:'10px 14px', background:'#F0FDF4', borderRadius:8, border:'1px solid #BBF7D0' }}>
+                      <span style={{ fontSize:20 }}>📄</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:700, fontSize:13, color:'#166534' }}>{padronArchivo}</div>
+                        <div style={{ fontSize:12, color:'#16a34a' }}>
+                          {padronGrupos.reduce((s,g)=>s+g.estudiantes.length,0)} estudiante(s) en {padronGrupos.length} grupo(s) de grado/sección
+                          {padronInvalidas > 0 ? ` — ${padronInvalidas} fila(s) descartada(s) por faltarle grado, sección, número o nombre` : ''}
+                        </div>
+                      </div>
+                      <button onClick={seleccionarArchivoPadron} style={{ padding:'5px 10px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:6, fontSize:11, cursor:'pointer' }}>Cambiar</button>
+                    </div>
+
+                    <div style={{ flex:1, overflow:'auto', marginBottom:14 }}>
+                      {padronGrupos.map((g, i) => (
+                        <div key={i} style={{ border:'1px solid #DDE3ED', borderRadius:8, marginBottom:8, overflow:'hidden' }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 12px', background: g.cursoId ? '#F0FDF4' : '#FFFBEB' }}>
+                            <span style={{ fontSize:14 }}>{g.cursoId ? '✓' : '⚠'}</span>
+                            <div style={{ flex:1, fontSize:13, fontWeight:700, color: g.cursoId ? '#166534' : '#92400E' }}>
+                              {g.cursoId ? g.cursoNombre : `${g.grado} ${g.seccion} — no existe un curso con ese grado/sección`}
+                            </div>
+                            <span style={{ fontSize:12, color:'#888' }}>{g.estudiantes.length} estudiante(s)</span>
+                            {!g.cursoId && (
+                              <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:600, color:'#92400E', cursor:'pointer' }}>
+                                <input type="checkbox" checked={!!g.crear} onChange={() => toggleCrearGrupoPadron(i)} />
+                                Crear curso "{g.grado} {g.seccion}"
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+              <button onClick={cerrarModalPadron} style={{ padding:'9px 20px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>
+                {padronResultado ? 'Cerrar' : 'Cancelar'}
+              </button>
+              {!padronResultado && padronGrupos.length > 0 && (
+                <button onClick={confirmarImportPadron} disabled={padronCargando}
+                  style={{ padding:'9px 24px', background:'#00695C', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                  {padronCargando ? '⏳ Importando...' : '📥 Confirmar importación'}
+                </button>
+              )}
             </div>
           </div>
         </div>
