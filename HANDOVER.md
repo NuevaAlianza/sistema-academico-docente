@@ -2,8 +2,8 @@
 # Sistema Académico Docente
 
 **Versión:** 1.6.0 (sin bump todavía — hay código nuevo sin versionar, ver abajo)
-**Fecha:** 2026-08-29
-**Estado:** Estable — integración con Portal-Ars (padrón + reporte del maestro) completa y pusheada a `origin/main` (`6760210..d475b83`), sin `.exe` generado todavía
+**Fecha:** 2026-08-30
+**Estado:** Estable — integración con Portal-Ars (padrón + reporte del maestro, con gestión completa del lado Portal-Ars) terminada y pusheada a `origin/main` (`6760210..4abb6a8`), sin `.exe` generado todavía
 
 ---
 
@@ -11,7 +11,9 @@
 
 ### Integración con Portal-Ars — completa en ambos repos, pusheada, sin bump de versión
 
-**Estado final (2026-08-29): las 3 piezas de esta integración están terminadas, probadas de punta a punta contra datos/Supabase reales, y pusheadas.** Lado sistema-docente: commits `ca969ba` (padrón) + `d475b83` (export) en `origin/main`. Lado Portal-Ars (repo separado `NuevaAlianza/Portal-Ars`): commits `1e6906c` (RPCs + pantalla admin + tarjeta del estudiante) + `f0a3827` (pulido visual de competencias) en su `origin/main` — ver la memoria de esa sesión (`project_sync_sistema_docente.md`) para el detalle completo del lado Portal-Ars.
+**Estado final (2026-08-30): las 3 piezas de esta integración están terminadas, probadas de punta a punta contra datos/Supabase reales (incluida una prueba de volumen con 240 filas reales), y pusheadas.** Lado sistema-docente: commits `ca969ba` (padrón) + `d475b83` (export) + `4abb6a8` (docs) en `origin/main`. Lado Portal-Ars (repo separado `NuevaAlianza/Portal-Ars`): commits `1e6906c` (RPCs + pantalla admin + tarjeta del estudiante), `f0a3827` (pulido visual de competencias), `6b0365f` (gestión ver/ocultar/eliminar — faltaba en la versión original, se agregó a pedido), y `eec5655` (filtros + colapso por grupo en el listado) en su `origin/main` — ver la memoria de esa sesión (`project_sync_sistema_docente.md`) para el detalle completo del lado Portal-Ars.
+
+**Prueba de volumen (solo del lado Portal-Ars, no requirió ningún cambio acá):** se generó un archivo de 240 filas (60 estudiantes de prueba reales × 2 materias × 2 períodos, mismo formato que exporta este sistema) y se cargó contra Supabase real — 240/240 emparejadas y guardadas, 72 grupos generados, listado renderizado en 5ms con todo colapsado por defecto, filtros por grado/período reduciendo correctamente la cantidad de grupos visibles (72→12 por grado, 72→36 por período). Confirma que el listado con filtros aguanta bien un volumen realista de fin de período. Los 240 registros de prueba se eliminaron después, sin dejar nada en la base real.
 
 **Lo que falta para que esto sea usable por el maestro en su PC**: nada de código — falta el empaquetado. `npm run build-app` para generar el `.exe` y publicar un release en GitHub. **No se hizo en esta sesión a propósito** — el usuario prefirió no bumpear versión hasta confirmar que todo el flujo funciona (ver AGENTS.md: "no actualizar la versión en package.json hasta que el usuario confirme que está listo"). Cuando se retome: decidir el número de versión (¿1.7.0? hay 2 features nuevas, no solo fixes) y seguir el checklist de cierre de un ciclo normal (ver checklists de v1.5.x/v1.6.0 abajo como plantilla).
 
@@ -168,7 +170,7 @@ Segunda aplicación de escritorio para el orientador o director del centro. Obje
 
 ## Notas para la próxima sesión
 
-- **Integración con Portal-Ars completa y pusheada (`ca969ba`, `d475b83`), pero sin `.exe` ni bump de versión** — ver sección de arriba. Antes de generar el instalador, probar con un roster real (no de prueba) una vez que el curso tenga estudiantes reales cargados — hoy "6to A FIHR" solo tiene estudiantes de prueba (ver punto siguiente).
+- **Integración con Portal-Ars completa y pusheada (`ca969ba`, `d475b83`, `4abb6a8`), pero sin `.exe` ni bump de versión** — ver sección de arriba. Antes de generar el instalador, probar con un roster real (no de prueba) una vez que el curso tenga estudiantes reales cargados — hoy "6to A FIHR" solo tiene estudiantes de prueba (ver punto siguiente).
 - **La BD de producción tiene datos de prueba sin limpiar, a propósito** (pendiente de decisión, no borrar todavía):
   - Curso "6to A FIHR": estudiantes `Prueba 01`–`Prueba 10` (códigos `PRUEBA-01`..`PRUEBA-10`) con calificaciones en los 4 períodos, más `TEST Estudiante A` (código `TEST-A`, solo con notas en P1).
   - Cursos `6to B FIHR` y `6to C FIHR` completos (duplicados de la estructura de 6to A), cada uno con 1 estudiante de prueba calificado.
