@@ -2,10 +2,62 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs   = require('fs');
+const crypto = require('node:crypto');
 const db   = require('./database');
 const { iniciarAutoUpdater } = require('./updater')
 
 console.log('✅ MAIN.JS CARGADO DESDE:', __filename);
+
+// ── PORTAL-ARS: conexión compartida por "clases semana a semana" (más
+// abajo) y por el backup en la nube. El anon key es público a propósito
+// (mismo que ya está commiteado en Portal-Ars/js/config.js) -- lo único
+// que realmente autoriza cada operación es el PIN de admin, igual que
+// en ese sistema (admin_autorizado(p_pin_hash) del lado de la RPC).
+const PORTAL_ARS_URL = 'https://rjnhjvqivwkyvtcvenja.supabase.co';
+const PORTAL_ARS_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJqbmhqdnFpdndreXZ0Y3ZlbmphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNjUwMzEsImV4cCI6MjA5OTY0MTAzMX0.U5MktnSvczqqaXM09g369n50xUxabCKa7FoGJEQktwk';
+
+async function _portalArsRpc(nombre, body) {
+  const res = await fetch(`${PORTAL_ARS_URL}/rest/v1/rpc/${nombre}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: PORTAL_ARS_ANON_KEY,
+      Authorization: `Bearer ${PORTAL_ARS_ANON_KEY}`,
+    },
+    body: JSON.stringify(body || {}),
+  });
+  if (!res.ok) throw new Error(`Portal-Ars respondió ${res.status}`);
+  return res.json();
+}
+
+async function _loginPortalArs(pin) {
+  if (!pin) return { error: 'Falta el PIN de Portal-Ars (Configuración → Portal-Ars).' };
+  const login = await _portalArsRpc('admin_login', { p_pin: pin });
+  if (!login || !login.ok || !login.token) return { error: (login && login.error) || 'PIN de Portal-Ars incorrecto.' };
+  return { token: login.token };
+}
+
+// ── Cifrado del backup en la nube (solo node:crypto, sin dependencias
+// nuevas). Formato del archivo: [salt(16)][iv(12)][authTag(16)][datos].
+// El authTag de GCM hace que una contraseña incorrecta falle explícito
+// al descifrar, en vez de producir un .db corrupto en silencio.
+function _cifrarArchivo(rutaOrigen, rutaDestino, password) {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const key = crypto.scryptSync(password, salt, 32);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const cifrado = Buffer.concat([cipher.update(fs.readFileSync(rutaOrigen)), cipher.final()]);
+  fs.writeFileSync(rutaDestino, Buffer.concat([salt, iv, cipher.getAuthTag(), cifrado]));
+}
+
+function _descifrarArchivo(rutaOrigen, rutaDestino, password) {
+  const buf = fs.readFileSync(rutaOrigen);
+  const salt = buf.subarray(0, 16), iv = buf.subarray(16, 28), authTag = buf.subarray(28, 44), cifrado = buf.subarray(44);
+  const key = crypto.scryptSync(password, salt, 32);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  fs.writeFileSync(rutaDestino, Buffer.concat([decipher.update(cifrado), decipher.final()]));
+}
 
 function crearVentana() {
   const win = new BrowserWindow({
@@ -92,6 +144,37 @@ app.whenReady().then(() => {
       return db.importTemarioJson({ jsonData, cursoId, materiaId, anioId });
     } catch (err) {
       console.error('import-temario-json error:', err);
+      return { error: err.message };
+    }
+  });
+
+  // ── CLASES DESDE PORTAL-ARS (archivo exportado, o descarga directa) ────
+  ipcMain.handle('import-clases-portal-ars-json', (_, { filas, cursoId, materiaId, anioId }) => {
+    try {
+      return db.importClasesPortalArs(filas, { cursoId, materiaId, anioId });
+    } catch (err) {
+      console.error('import-clases-portal-ars-json error:', err);
+      return { error: err.message };
+    }
+  });
+
+  // Descarga directa: reusa admin_login + admin_listar_contenido, las
+  // mismas RPCs que ya usa el admin de Portal-Ars -- no hace falta ninguna
+  // RPC nueva de ese lado para leer. Solo filtra por grado del curso acá,
+  // el resto (matcheo de periodo, duplicados) lo hace importClasesPortalArs
+  // igual que con el archivo, para que ambos caminos terminen en el mismo
+  // modal de vista previa del lado de Temario.
+  ipcMain.handle('descargar-clases-portal-ars', async (_, { grado }) => {
+    try {
+      const cfg = db.getConfig();
+      const sesion = await _loginPortalArs(cfg.pin_portal_ars);
+      if (sesion.error) return { error: sesion.error };
+      const listado = await _portalArsRpc('admin_listar_contenido', { p_pin_hash: sesion.token });
+      if (!listado || !listado.ok) return { error: (listado && listado.error) || 'No se pudo leer el contenido de Portal-Ars.' };
+      const filas = (listado.semanas || []).filter(s => !grado || s.grado === grado);
+      return { filas };
+    } catch (err) {
+      console.error('descargar-clases-portal-ars error:', err);
       return { error: err.message };
     }
   });
@@ -417,7 +500,9 @@ ipcMain.handle('backup-seleccionar-bd', async () => {
 });
 
 // ── BACKUP: IMPORTAR / RESTAURAR BD ─────────────────────────────────────────
-ipcMain.handle('backup-importar-bd', async (_, rutaOrigen) => {
+// Compartido por el restore manual (archivo local) y por el restore desde
+// la nube (una vez que ese archivo ya se descargó y descifró a disco).
+function _restaurarArchivoBD(rutaOrigen) {
   try {
     const destino = path.join(app.getPath('userData'), 'sistema_docente.db');
     db.cerrar();
@@ -432,6 +517,80 @@ ipcMain.handle('backup-importar-bd', async (_, rutaOrigen) => {
   } catch(e) {
     try { db.initialize(); } catch(_) {}
     return { ok: false, error: e.message };
+  }
+}
+ipcMain.handle('backup-importar-bd', async (_, rutaOrigen) => _restaurarArchivoBD(rutaOrigen));
+
+// ── BACKUP EN LA NUBE: SUBIR (cifrado, una sola copia por instalación) ──────
+// Sube siempre a la misma ruta (instalacion_id) -- cada subida pisa la
+// anterior, es la política de "una sola copia" ya confirmada con el
+// usuario. El PIN nunca se pide en el momento: se usa el que el maestro
+// ya guardó en Configuración → Portal-Ars.
+ipcMain.handle('backup-subir-nube', async (_, { password }) => {
+  if (!password) return { ok: false, error: 'Falta la contraseña para cifrar el backup.' };
+  const tmpPlano = path.join(app.getPath('temp'), `sd_backup_${Date.now()}.db`);
+  const tmpCifrado = tmpPlano + '.enc';
+  try {
+    const cfg = db.getConfig();
+    const sesion = await _loginPortalArs(cfg.pin_portal_ars);
+    if (sesion.error) return { ok: false, error: sesion.error };
+    const instalacionId = db.getOrCrearInstalacionId();
+
+    await db.db.backup(tmpPlano);
+    _cifrarArchivo(tmpPlano, tmpCifrado, password);
+
+    const urlResp = await _portalArsRpc('admin_backup_subir_url', {
+      p_pin_hash: sesion.token, p_instalacion_id: instalacionId, p_nombre_maestro: cfg.nombre_maestro || '',
+    });
+    if (!urlResp || !urlResp.ok || !urlResp.url) return { ok: false, error: (urlResp && urlResp.error) || 'No se pudo obtener la URL de subida.' };
+
+    // El gateway de Supabase exige "apikey" en todo request, incluso con
+    // una signed URL -- el anon key alcanza acá, la URL ya autoriza el resto.
+    const res = await fetch(urlResp.url, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream', apikey: PORTAL_ARS_ANON_KEY }, body: fs.readFileSync(tmpCifrado) });
+    if (!res.ok) return { ok: false, error: `La subida a la nube falló (${res.status}).` };
+    return { ok: true };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  } finally {
+    if (fs.existsSync(tmpPlano)) fs.unlinkSync(tmpPlano);
+    if (fs.existsSync(tmpCifrado)) fs.unlinkSync(tmpCifrado);
+  }
+});
+
+// ── BACKUP EN LA NUBE: RESTAURAR ─────────────────────────────────────────────
+// Descarga y descifra a archivos temporales primero (sin tocar la BD real
+// para nada); solo si el descifrado sale bien (contraseña correcta) se
+// llega a _restaurarArchivoBD, que es el mismo camino ya probado del
+// restore manual.
+ipcMain.handle('backup-descargar-nube', async (_, { password }) => {
+  if (!password) return { ok: false, error: 'Falta la contraseña para descifrar el backup.' };
+  const tmpCifrado = path.join(app.getPath('temp'), `sd_restore_${Date.now()}.db.enc`);
+  const tmpPlano = tmpCifrado.replace(/\.enc$/, '');
+  try {
+    const cfg = db.getConfig();
+    const sesion = await _loginPortalArs(cfg.pin_portal_ars);
+    if (sesion.error) return { ok: false, error: sesion.error };
+    const instalacionId = db.getOrCrearInstalacionId();
+
+    const urlResp = await _portalArsRpc('admin_backup_descargar_url', { p_pin_hash: sesion.token, p_instalacion_id: instalacionId });
+    if (!urlResp || !urlResp.ok || !urlResp.url) return { ok: false, error: (urlResp && urlResp.error) || 'No hay ningún backup en la nube para esta instalación.' };
+
+    const res = await fetch(urlResp.url, { headers: { apikey: PORTAL_ARS_ANON_KEY } });
+    if (!res.ok) return { ok: false, error: `La descarga desde la nube falló (${res.status}).` };
+    fs.writeFileSync(tmpCifrado, Buffer.from(await res.arrayBuffer()));
+
+    try {
+      _descifrarArchivo(tmpCifrado, tmpPlano, password);
+    } catch (e) {
+      return { ok: false, error: 'Contraseña incorrecta (o el archivo está dañado).' };
+    }
+
+    return _restaurarArchivoBD(tmpPlano);
+  } catch(e) {
+    return { ok: false, error: e.message };
+  } finally {
+    if (fs.existsSync(tmpCifrado)) fs.unlinkSync(tmpCifrado);
+    if (fs.existsSync(tmpPlano)) fs.unlinkSync(tmpPlano);
   }
 });
 

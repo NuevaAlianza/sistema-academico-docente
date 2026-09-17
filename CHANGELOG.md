@@ -1,5 +1,16 @@
 # Changelog — Sistema Académico Docente
 
+## [1.7.0] — 2026-09-17
+
+### Added (Nuevo)
+- Temario: traer clases desde Portal-Ars, con dos caminos — importar un archivo JSON exportado desde el admin de Portal-Ars, o descarga directa desde la app (botón "🌐 Traer de Portal-Ars", pide el PIN de admin ya guardado en Configuración). Ambos caminos comparten el mismo modal de vista previa y el mismo adaptador (`importClasesPortalArs`), que preserva todo el `detalle` de Portal-Ars (rúbrica, texto bíblico, materiales, actividades, etc.) en `meta_json` del tema.
+- Backup en la nube (Portal-Ars): nueva sección en Backup para subir una copia cifrada (contraseña, AES-256-GCM) a Supabase Storage y restaurarla — una sola copia por instalación, cada subida reemplaza la anterior.
+- Configuración: nuevo campo "PIN de administrador" (Portal-Ars), usado por las dos funciones de arriba.
+
+### Internal (Interno)
+- `_restaurarArchivoBD` extraído en `electron/main.js` para que el restore manual y el restore desde la nube compartan exactamente el mismo camino (cerrar conexión, limpiar WAL/SHM, copiar, reabrir).
+- `getOrCrearInstalacionId` en `database.js`: identificador estable por instalación (UUID), generado una sola vez, usado como llave del archivo de backup en la nube.
+
 ## [1.5.0] — 2026-06-08
 
 ### Added (Nuevo)

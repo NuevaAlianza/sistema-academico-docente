@@ -33,10 +33,11 @@ function Boton({ onClick, color, bg, borde, icono, label, sublabel, disabled }) 
 }
 
 export default function Backup() {
-  const [cargando, setCargando] = useState(null) // 'exportar' | 'importar' | 'excel' | 'reset'
+  const [cargando, setCargando] = useState(null) // 'exportar' | 'importar' | 'excel' | 'reset' | 'nube-subir' | 'nube-restaurar'
   const [toast,    setToast]    = useState(null)
-  const [confirm,  setConfirm]  = useState(null) // 'importar' | 'reset'
+  const [confirm,  setConfirm]  = useState(null) // 'importar' | 'reset' | 'nube-subir' | 'nube-restaurar'
   const [archivoImportar, setArchivoImportar] = useState(null)
+  const [password, setPassword] = useState('')
   const confirmT = useModalTransition(confirm)
 
   function toast2(msg, error) {
@@ -98,6 +99,31 @@ export default function Backup() {
     setCargando(null)
   }
 
+  // ── BACKUP EN LA NUBE (Portal-Ars) ───────────────────────────────
+  async function confirmarSubirNube() {
+    setCargando('nube-subir'); setConfirm(null)
+    try {
+      const res = await window.api.invoke('backup-subir-nube', { password })
+      if (res?.ok) toast2('✅ Backup subido a la nube.')
+      else         toast2('Error al subir: ' + (res?.error || 'desconocido'), true)
+    } catch(e) {
+      toast2('Error: ' + e.message, true)
+    }
+    setCargando(null); setPassword('')
+  }
+
+  async function confirmarRestaurarNube() {
+    setCargando('nube-restaurar'); setConfirm(null)
+    try {
+      const res = await window.api.invoke('backup-descargar-nube', { password })
+      if (res?.ok) toast2('✅ Base de datos restaurada desde la nube. Reinicia la aplicación para ver los cambios.')
+      else         toast2('Error al restaurar: ' + (res?.error || 'desconocido'), true)
+    } catch(e) {
+      toast2('Error: ' + e.message, true)
+    }
+    setCargando(null); setPassword('')
+  }
+
   // ── RESET ────────────────────────────────────────────────────────
   async function confirmarReset() {
     setCargando('reset')
@@ -150,6 +176,31 @@ export default function Backup() {
           sublabel="Selecciona un archivo .db exportado previamente"
           color="#2563A8" bg="#D6E4F7" borde="#9BBFED"
         />
+      </Seccion>
+
+      {/* BACKUP EN LA NUBE */}
+      <Seccion titulo="Backup en la nube (Portal-Ars)" icono="☁️">
+        <p style={{ fontSize:13, color:'#666', marginBottom:14, lineHeight:1.6 }}>
+          Sube una copia cifrada de la base de datos a la nube de Portal-Ars, para no perder todo si esta PC se daña o se pierde. Cada subida reemplaza la anterior — se guarda una sola copia. Requiere el PIN de Portal-Ars configurado en Configuración.
+        </p>
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          <Boton
+            onClick={() => { setPassword(''); setConfirm('nube-subir') }}
+            disabled={!!cargando}
+            icono={cargando === 'nube-subir' ? '⏳' : '☁️'}
+            label={cargando === 'nube-subir' ? 'Subiendo...' : 'Subir backup a la nube'}
+            sublabel="Se cifra con una contraseña antes de salir de esta PC"
+            color="#00695C" bg="#D6EEEA" borde="#8FCFC0"
+          />
+          <Boton
+            onClick={() => { setPassword(''); setConfirm('nube-restaurar') }}
+            disabled={!!cargando}
+            icono={cargando === 'nube-restaurar' ? '⏳' : '☁️'}
+            label={cargando === 'nube-restaurar' ? 'Restaurando...' : 'Restaurar desde la nube'}
+            sublabel="Reemplaza los datos actuales con la última copia subida"
+            color="#C84B00" bg="#FDECD7" borde="#E8A878"
+          />
+        </div>
       </Seccion>
 
       {/* EXPORTAR EXCEL */}
@@ -206,6 +257,43 @@ export default function Backup() {
               <button onClick={confirmarImportar}
                 style={{ padding:'10px 28px', background:'#2563A8', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>
                 📥 Sí, restaurar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL BACKUP EN LA NUBE (subir / restaurar) */}
+      {(confirmT?.value === 'nube-subir' || confirmT?.value === 'nube-restaurar') && (
+        <div className="modal-backdrop" data-closing={confirmT.closing} style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:600 }}>
+          <div className="modal-content" data-closing={confirmT.closing} style={{ background:'#fff', borderRadius:14, padding:32, width:420, boxShadow:'0 16px 48px #0004' }}>
+            <div style={{ textAlign:'center', fontSize:40, marginBottom:12 }}>☁️</div>
+            <h3 style={{ color:'#1B3A6B', marginBottom:8, fontSize:16, textAlign:'center' }}>
+              {confirmT.value === 'nube-subir' ? '¿Subir backup a la nube?' : '¿Restaurar desde la nube?'}
+            </h3>
+            <p style={{ color:'#555', fontSize:13, marginBottom:14, textAlign:'center' }}>
+              {confirmT.value === 'nube-subir'
+                ? 'Esto reemplaza la copia anterior en la nube (si había una).'
+                : 'Esto reemplaza todos los datos actuales de esta PC. Esta acción no se puede deshacer.'}
+            </p>
+            <label style={{ fontSize:12, fontWeight:700, color:'#444', display:'block', marginBottom:6 }}>
+              {confirmT.value === 'nube-subir' ? 'Contraseña para cifrar' : 'Contraseña para descifrar'}
+            </label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoFocus
+              placeholder="Contraseña"
+              style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 12px', fontSize:13, outline:'none', marginBottom:14, boxSizing:'border-box' }} />
+            <div style={{ background:'#FFF8D6', border:'1px solid #D4B820', borderRadius:8, padding:'8px 12px', marginBottom:20, fontSize:12, color:'#7A5C00' }}>
+              ⚠️ Si perdés esta contraseña, el backup en la nube no se puede recuperar.
+            </div>
+            <div style={{ display:'flex', gap:10, justifyContent:'center' }}>
+              <button onClick={() => { setConfirm(null); setPassword('') }}
+                style={{ padding:'10px 28px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555', fontWeight:600 }}>
+                Cancelar
+              </button>
+              <button onClick={confirmT.value === 'nube-subir' ? confirmarSubirNube : confirmarRestaurarNube}
+                disabled={!password}
+                style={{ padding:'10px 28px', background: password ? '#1B3A6B' : '#CCC', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor: password ? 'pointer' : 'default' }}>
+                {confirmT.value === 'nube-subir' ? '☁️ Subir' : '☁️ Restaurar'}
               </button>
             </div>
           </div>

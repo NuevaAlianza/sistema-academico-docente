@@ -60,6 +60,7 @@ export default function Temario({anio,materia}){
   const [importPreview,setImportPreview]=useState(null)
   const [importResumen,setImportResumen]=useState(null)
   const [importando,   setImportando]   =useState(false)
+  const [descargandoPortalArs,setDescargandoPortalArs]=useState(false)
   const confirmT      = useModalTransition(confirm)
   const modalClonarT  = useModalTransition(modalClonar)
   const modalImportarT= useModalTransition(modalImportar)
@@ -171,15 +172,55 @@ export default function Temario({anio,materia}){
     return {porPeriodo,noMatchean}
   }
 
+  // Mismo cálculo que arriba pero para el shape plano que exporta/descarga
+  // Portal-Ars (un array de semanas, no agrupado por periodo todavía).
+  function calcularPreviewImportClases(filas){
+    const porNumero={}
+    ;(filas||[]).forEach(f=>{ (porNumero[f.periodo]=porNumero[f.periodo]||[]).push(f) })
+    const porPeriodo=[],noMatchean=[]
+    Object.entries(porNumero).forEach(([n,fs])=>{
+      const periodo=periodos.find(dbP=>dbP.numero_orden===Number(n))
+      if(!periodo){noMatchean.push({id:n,nTemas:fs.length});return}
+      porPeriodo.push({nombre:periodo.nombre,nTemas:fs.length})
+    })
+    return {porPeriodo,noMatchean}
+  }
+
   async function seleccionarJsonTemario(){
     const res=await window.api.invoke('seleccionar-json-temario')
     if(!res)return
     if(res.error){alert(res.error);return}
+    if(Array.isArray(res.jsonData)){
+      // Shape plano exportado por Portal-Ars ("📤 Exportar JSON" en su
+      // admin de Contenido) -- mismo modal de vista previa de abajo,
+      // solo cambia a qué IPC se llama al confirmar.
+      setImportJson({tipo:'clases-portal-ars',archivo:res.archivo,filas:res.jsonData})
+      setImportPreview(calcularPreviewImportClases(res.jsonData))
+      setImportResumen(null)
+      setModalImportar(true)
+      return
+    }
     if(!res.jsonData||!Array.isArray(res.jsonData.periodos)){
       alert('El JSON no tiene la estructura esperada: falta el campo "periodos".');return
     }
-    setImportJson(res)
+    setImportJson({tipo:'temario',jsonData:res.jsonData,archivo:res.archivo})
     setImportPreview(calcularPreviewImport(res.jsonData))
+    setImportResumen(null)
+    setModalImportar(true)
+  }
+
+  // Descarga directa: mismo destino (Temario) y mismo modal de vista
+  // previa que la opción de archivo de arriba, solo que los datos vienen
+  // de admin_listar_contenido de Portal-Ars en vez de un archivo local.
+  async function traerDePortalArs(){
+    if(!cursoSel)return
+    setDescargandoPortalArs(true)
+    const res=await window.api.invoke('descargar-clases-portal-ars',{grado:cursoSel.grado})
+    setDescargandoPortalArs(false)
+    if(res&&res.error){alert(res.error);return}
+    if(!res.filas||!res.filas.length){alert(`Portal-Ars no tiene clases cargadas para el grado "${cursoSel.grado}".`);return}
+    setImportJson({tipo:'clases-portal-ars',archivo:'Portal-Ars (descarga directa)',filas:res.filas})
+    setImportPreview(calcularPreviewImportClases(res.filas))
     setImportResumen(null)
     setModalImportar(true)
   }
@@ -187,9 +228,9 @@ export default function Temario({anio,materia}){
   async function confirmarImportarTemario(){
     if(!importJson||!cursoSel)return
     setImportando(true)
-    const res=await window.api.invoke('import-temario-json',{
-      jsonData:importJson.jsonData,cursoId:cursoSel.id,materiaId,anioId:anio.id,
-    })
+    const res = importJson.tipo==='clases-portal-ars'
+      ? await window.api.invoke('import-clases-portal-ars-json',{filas:importJson.filas,cursoId:cursoSel.id,materiaId,anioId:anio.id})
+      : await window.api.invoke('import-temario-json',{jsonData:importJson.jsonData,cursoId:cursoSel.id,materiaId,anioId:anio.id})
     setImportando(false)
     if(res&&res.error){alert('Error al importar: '+res.error);return}
     setImportResumen(res)
@@ -303,6 +344,7 @@ export default function Temario({anio,materia}){
               <div style={{fontSize:11,opacity:.8}}>{realizados}/{temas.length} temas</div>
             </div>
             <button onClick={seleccionarJsonTemario} style={{padding:'8px 14px',background:'rgba(255,255,255,.2)',border:'1.5px solid rgba(255,255,255,.5)',borderRadius:8,color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>📥 Importar JSON</button>
+            <button onClick={traerDePortalArs} disabled={descargandoPortalArs} style={{padding:'8px 14px',background:'rgba(255,255,255,.2)',border:'1.5px solid rgba(255,255,255,.5)',borderRadius:8,color:'#fff',fontSize:12,fontWeight:700,cursor:descargandoPortalArs?'default':'pointer',opacity:descargandoPortalArs?.6:1}}>{descargandoPortalArs?'⏳ Buscando...':'🌐 Traer de Portal-Ars'}</button>
             {temas.length>0&&cursosOtros.length>0&&(
               <button onClick={abrirClonar} style={{padding:'8px 14px',background:'rgba(255,255,255,.2)',border:'1.5px solid rgba(255,255,255,.5)',borderRadius:8,color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>📋 Clonar</button>
             )}
@@ -409,7 +451,7 @@ export default function Temario({anio,materia}){
       {modalImportarT&&(
         <div className="modal-backdrop" data-closing={modalImportarT.closing} style={{position:'fixed',inset:0,background:'#0005',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500}} onClick={e=>{if(e.target===e.currentTarget)cerrarModalImportar()}}>
           <div className="modal-content" data-closing={modalImportarT.closing} style={{background:'#fff',borderRadius:14,padding:28,width:480,maxHeight:'80vh',overflowY:'auto',boxShadow:'0 16px 48px #0004'}}>
-            <h2 style={{color:'#1B3A6B',marginBottom:6,fontSize:17}}>📥 Importar temario (JSON)</h2>
+            <h2 style={{color:'#1B3A6B',marginBottom:6,fontSize:17}}>{importJson?.tipo==='clases-portal-ars'?'🌐 Traer clases de Portal-Ars':'📥 Importar temario (JSON)'}</h2>
             <p style={{color:'#888',fontSize:12,marginBottom:16}}>
               Archivo: <strong>{importJson?.archivo}</strong><br/>
               Destino: <strong style={{color:cursoSel?.color}}>{cursoSel?.nombre}</strong>{materia?' · '+materia.nombre:''}

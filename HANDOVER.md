@@ -1,13 +1,33 @@
 # HANDOVER.md — Estado actual del proyecto
 # Sistema Académico Docente
 
-**Versión:** 1.6.0 (sin bump todavía — hay código nuevo sin versionar, ver abajo)
-**Fecha:** 2026-08-30
-**Estado:** Estable — integración con Portal-Ars (padrón + reporte del maestro, con gestión completa del lado Portal-Ars) terminada y pusheada a `origin/main` (`6760210..4abb6a8`), sin `.exe` generado todavía
+**Versión:** 1.7.0
+**Fecha:** 2026-09-17
+**Estado:** Estable — segunda ronda de integración con Portal-Ars (clases semana a semana + backup en la nube) terminada, probada de punta a punta contra Supabase real y contra la app real, commiteada. Sin `.exe` generado todavía.
 
 ---
 
 ## Lo último que se hizo
+
+### Clases desde Portal-Ars + backup en la nube (2026-09-17)
+
+**Motivación:** Portal-Ars ya tiene el contenido semanal de clases (`clases_contenido`) y el maestro quería poder traerlo a Temario sin duplicar el trabajo de cargarlo dos veces, además de una forma de no perder toda la información si el equipo se daña o se pierde (hasta ahora el backup era 100% local). Se agregaron dos piezas, ambas siguiendo el patrón ya establecido de intercambio por archivo/RPC puntual, sin sync en vivo de fondo.
+
+**1) Clases semana a semana (Temario ← Portal-Ars), con dos caminos a propósito (pedido explícito: "da opciones")**
+- Portal-Ars (`js/admin.js`): botón "📤 Exportar JSON" en Contenido, reverso exacto del import que ya existía — respeta los filtros de grado/período ya aplicados en pantalla.
+- sistema-docente: `importClasesPortalArs` nuevo en `electron/database.js` — a diferencia de `importTemarioJson` (que nunca guardaba el `contenido` de la semana), este preserva tanto el `contenido`/`texto_ampliado` como todo el `detalle` (rúbrica, texto bíblico, materiales, actividades, actividades_cuaderno, classroom_txt, etc.) en `meta_json`, para no perder nada de lo que ya tiene Portal-Ars.
+- Dos IPC nuevos (`import-clases-portal-ars-json`, `descargar-clases-portal-ars`) y un botón nuevo "🌐 Traer de Portal-Ars" en `Temario.jsx`, junto al de importar archivo — ambos caminos comparten el mismo modal de vista previa (detección automática de shape: array plano de Portal-Ars vs. el `{periodos:[...]}` que ya existía). La descarga directa reusa `admin_login` + `admin_listar_contenido`, las mismas RPCs que ya usa el admin de Portal-Ars — no hizo falta ninguna RPC nueva de lectura del otro lado.
+- **Verificado con datos reales de prueba** (no solo build): script contra una copia aislada de la BD confirmando matcheo de período, detección de duplicados (2da pasada con las mismas filas → 0 nuevos, 2 omitidos), y que `contenido_texto` + los 17 campos de `meta_json` (incluida rúbrica y texto bíblico) se guardan completos.
+
+**2) Backup en la nube (Portal-Ars, Supabase Storage)**
+- Nuevo campo "PIN de administrador" en Configuración → Portal-Ars (mismo PIN que ya usa el admin humano de ese sistema).
+- `TANDA_26_BACKUPS_DOCENTE.sql` (Portal-Ars): bucket privado `backups-docente`, `service_role` key guardado en Supabase Vault (nunca expuesto al cliente), y 2 RPCs `SECURITY DEFINER` (`admin_backup_subir_url`, `admin_backup_descargar_url`) gateadas por el mismo `admin_autorizado(p_pin_hash)` que el resto del proyecto — devuelven signed URLs de Storage, el cliente sube/descarga directo sin pasar los bytes por Postgres.
+- sistema-docente: cifrado AES-256-GCM con `node:crypto` (sin dependencias nuevas) en `electron/main.js`, `getOrCrearInstalacionId` en `database.js` (UUID estable por instalación, es la llave del archivo en la nube), y sección "☁️ Backup en la nube" en `Backup.jsx` (subir/restaurar, pide contraseña, advierte que sin ella el backup no se puede recuperar). `_restaurarArchivoBD` se extrajo como función compartida para que el restore manual y el restore desde la nube usen exactamente el mismo camino (cerrar conexión, limpiar `.wal`/`.shm`, copiar, reabrir).
+- Política confirmada con el usuario: **una sola copia por maestro** (cada subida reemplaza la anterior en la misma ruta) — logrado borrando el objeto anterior antes de generar la signed URL de subida, porque el parámetro `upsert` de la Storage API no se estaba respetando en pruebas reales (el token firmado siempre traía `upsert:false` sin importar lo que se mandara).
+- **Verificado de punta a punta, dos niveles:**
+  - Contra el Supabase real (vía `curl` directo a las signed URLs, sin pasar por la app): subida → descarga → contenido idéntico; segunda subida con contenido distinto → descarga trae la versión nueva, no la vieja (confirma "una sola copia").
+  - Contra la app real (`npm run dev`, con datos de prueba del maestro, no producción real de un tercero): Configuración con el PIN guardado → "Subir backup a la nube" → toast de éxito → "Restaurar desde la nube" con la misma contraseña → toast de éxito → reinicio de la app → cursos y estudiantes intactos.
+- **Incidente durante la configuración (ya resuelto):** al cargar el `service_role` key en Vault se invirtieron los argumentos de `vault.create_secret` la primera vez, lo que además expuso el key real en el chat de esta sesión. Se corrigió el orden y **se recomendó al usuario regenerar el `service_role` key** desde el dashboard de Supabase por las dudas — confirmar en la próxima sesión si ya se hizo.
 
 ### Integración con Portal-Ars — completa en ambos repos, pusheada, sin bump de versión
 
@@ -156,6 +176,23 @@ Ubicación: `%APPDATA%\sistema-academico-docente\`
 
 ---
 
+## Checklist de cierre v1.7.0
+
+- [x] Clases desde Portal-Ars: importar archivo + descarga directa, ambas al mismo modal de vista previa de Temario
+- [x] Backup en la nube: cifrado AES-256-GCM, subida/restauración, "una sola copia por maestro"
+- [x] `TANDA_26_BACKUPS_DOCENTE.sql` corrida contra el Supabase real de Portal-Ars (bucket + Vault + 2 RPCs)
+- [x] Probado con datos reales — script contra copia de BD (Feature A), `curl` directo contra Supabase (Feature B backend), y ciclo subir/restaurar completo en la app real (Feature B end-to-end)
+- [x] Bump versión a `1.7.0` en `package.json` + `CHANGELOG.md`
+- [x] Este `HANDOVER.md` actualizado
+- [ ] Commit local del ciclo completo (sistema-docente + Portal-Ars, repos separados)
+- [ ] Confirmar que el usuario ya rotó el `service_role` key de Portal-Ars (quedó expuesto en el chat durante la configuración de Vault — ver detalle arriba)
+- [ ] Limpiar los datos de prueba en Supabase (`docentes_backups` + objeto `prueba-instalacion-1.enc` en el bucket) si no se hizo ya
+- [ ] `npm run build-app` — generar `.exe`
+- [ ] Probar `.exe` instalado en ubicación limpia (particularmente: los botones nuevos de Temario y Backup)
+- [ ] `git push` (ambos repos) + crear release `v1.7.0` en GitHub con `.exe` adjunto
+
+---
+
 ## Próximo bloque grande
 
 ### App de Orientación / Supervisor
@@ -170,6 +207,8 @@ Segunda aplicación de escritorio para el orientador o director del centro. Obje
 
 ## Notas para la próxima sesión
 
+- **Pendiente de confirmar: ¿ya se rotó el `service_role` key de Portal-Ars?** Quedó expuesto en el chat durante la configuración de Vault de esta sesión (orden de argumentos invertido en `vault.create_secret`). Se recomendó regenerarlo desde el dashboard de Supabase y volver a guardarlo en Vault — si no se hizo todavía, hacerlo antes de confiar en el backup en la nube para datos reales.
+- **Pendiente: limpiar `docentes_backups`/`prueba-instalacion-1.enc`** en Supabase, datos de la prueba end-to-end de esta sesión.
 - **Integración con Portal-Ars completa y pusheada (`ca969ba`, `d475b83`, `4abb6a8`), pero sin `.exe` ni bump de versión** — ver sección de arriba. Antes de generar el instalador, probar con un roster real (no de prueba) una vez que el curso tenga estudiantes reales cargados — hoy "6to A FIHR" solo tiene estudiantes de prueba (ver punto siguiente).
 - **La BD de producción tiene datos de prueba sin limpiar, a propósito** (pendiente de decisión, no borrar todavía):
   - Curso "6to A FIHR": estudiantes `Prueba 01`–`Prueba 10` (códigos `PRUEBA-01`..`PRUEBA-10`) con calificaciones en los 4 períodos, más `TEST Estudiante A` (código `TEST-A`, solo con notas en P1).

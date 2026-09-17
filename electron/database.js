@@ -2,6 +2,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const { app } = require('electron');
+const { randomUUID } = require('node:crypto');
 
 // Distribución por defecto: cada comp al techo (100 / n_comps).
 // Usada al abrir celda vacía o al cambiar competencias de una actividad.
@@ -246,6 +247,47 @@ class SistemaDB {
           insertTema.run(materiaId || null, cursoId, periodo.id, titulo, t.estado || 'pendiente', ordenBase, Object.keys(meta).length > 0 ? JSON.stringify(meta) : null);
           count++;
         });
+      });
+    });
+    batch();
+    return { count, omitidos, periodosNoEncontrados };
+  }
+  // Importar clases desde Portal-Ars: mismo destino (temas) que
+  // importTemarioJson, pero el archivo/descarga de Portal-Ars viene
+  // como un array plano de semanas (no agrupado por periodo), y trae
+  // "contenido"/"texto_ampliado" además de los campos de "detalle"
+  // (rubrica, materiales, actividades_cuaderno, etc.) que el import de
+  // Temario JSON de más arriba no conocía -- se guarda todo en
+  // meta_json para no perder nada de lo que ya tiene Portal-Ars.
+  importClasesPortalArs(filasPlanas, { cursoId, materiaId, anioId }) {
+    const periodos = this.db.prepare('SELECT * FROM periodos WHERE anio_escolar_id = ? ORDER BY numero_orden').all(anioId);
+    const maxOrden = this.db.prepare('SELECT COALESCE(MAX(orden), 0) AS mx FROM temas WHERE curso_id = ? AND materia_id IS ?').get(cursoId, materiaId || null)?.mx || 0;
+    const insertTema = this.db.prepare('INSERT INTO temas (materia_id, curso_id, periodo_id, titulo, estado, orden, contenido_texto, meta_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const existeTema = this.db.prepare('SELECT id FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id IS ? AND titulo=?');
+    let count = 0, omitidos = 0;
+    const periodosNoEncontrados = [];
+    let ordenBase = maxOrden;
+    const batch = this.db.transaction(() => {
+      (filasPlanas || []).forEach(it => {
+        const periodo = periodos.find(dbP => dbP.numero_orden === Number(it.periodo));
+        if (!periodo) { if (!periodosNoEncontrados.includes(it.periodo)) periodosNoEncontrados.push(it.periodo ?? '?'); return; }
+        const titulo = it.titulo || 'Sin titulo';
+        if (existeTema.get(cursoId, periodo.id, materiaId || null, titulo)) { omitidos++; return; }
+        ordenBase += 1;
+        const d = (it.detalle && typeof it.detalle === 'object') ? it.detalle : {};
+        const meta = {
+          semana: it.semana ?? null, texto_ampliado: it.texto_ampliado || null,
+          subtitulo: d.subtitulo || null, fase: d.fase || null, competencia: d.competencia || null,
+          indicadores: d.indicadores || null, peso: d.peso || null, instrumento: d.instrumento || null,
+          actividades: d.actividades || null, texto_biblico: d.texto_biblico || null,
+          metacognicion: d.metacognicion || null, recursos: d.recursos || null,
+          materiales: d.materiales || null, actividades_cuaderno: d.actividades_cuaderno || null,
+          classroom_txt: d.classroom_txt || null, rubrica: d.rubrica || null, nota_sustituto: d.nota_sustituto || null,
+          origen: 'portal-ars',
+        };
+        Object.keys(meta).forEach(k => { if (meta[k] === null) delete meta[k]; });
+        insertTema.run(materiaId || null, cursoId, periodo.id, titulo, 'pendiente', ordenBase, it.contenido || '', Object.keys(meta).length > 0 ? JSON.stringify(meta) : null);
+        count++;
       });
     });
     batch();
@@ -555,6 +597,19 @@ deleteEstudiante(id) {
     return obj;
   }
   setConfig(clave, val) { return this.db.prepare("INSERT OR REPLACE INTO configuracion (clave,valor) VALUES (?,?)").run(clave, String(val)); }
+
+  // Identificador estable de esta instalación (una PC = un maestro), usado
+  // como llave del archivo de backup en la nube ("una sola copia por
+  // maestro" -- cada subida pisa la anterior en esa misma ruta). Se genera
+  // una sola vez, la primera vez que se necesita, y se guarda como
+  // cualquier otro valor de configuracion.
+  getOrCrearInstalacionId() {
+    const existente = this.db.prepare("SELECT valor FROM configuracion WHERE clave='instalacion_id'").get();
+    if (existente) return existente.valor;
+    const nuevo = randomUUID();
+    this.setConfig('instalacion_id', nuevo);
+    return nuevo;
+  }
 
   getStats(anioId, materiaId) {
     const cursos      = this.db.prepare("SELECT COUNT(*) as n FROM cursos WHERE anio_escolar_id=? AND estado='activo'").get(anioId);

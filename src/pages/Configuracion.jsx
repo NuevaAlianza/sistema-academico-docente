@@ -354,6 +354,15 @@ export default function Configuracion({ anio, materias, materia, onRecargarMater
         </Campo>
       </SECCION>
 
+      {/* ── PORTAL-ARS ── */}
+      <SECCION titulo="Portal-Ars" icono="🌐">
+        <Campo label="PIN de administrador" hint="El mismo PIN que usas para entrar al panel de administración de Portal-Ars. Se guarda en esta PC para poder traer clases y subir el backup a la nube sin pedirlo cada vez.">
+          <input type="password" value={cfg.pin_portal_ars||''} onChange={e => cambio('pin_portal_ars', e.target.value)}
+            placeholder="PIN" style={inputStyle}
+            onFocus={e => e.target.style.borderColor='#2563A8'} onBlur={e => e.target.style.borderColor='#DDE3ED'} />
+        </Campo>
+      </SECCION>
+
       {/* ── CALIFICACIONES ── */}
       <SECCION titulo="Calificaciones" icono="📝">
         <Campo label="Nota mínima aprobatoria" hint="Estudiantes por debajo se marcan en rojo">
