@@ -1,13 +1,20 @@
 # HANDOVER.md — Estado actual del proyecto
 # Sistema Académico Docente
 
-**Versión:** 1.7.0
-**Fecha:** 2026-09-17
+**Versión:** 1.8.0
+**Fecha:** 2026-09-20
 **Estado:** Estable — segunda ronda de integración con Portal-Ars (clases semana a semana + backup en la nube) terminada, probada de punta a punta contra Supabase real y contra la app real, commiteada. Sin `.exe` generado todavía.
 
 ---
 
 ## Lo último que se hizo
+
+### Grupos de trabajo para entrada de notas (2026-09-20) — v1.8.0, commiteado, sin push
+Forma alternativa de ver/colocar notas por grupo del cuaderno (5-6 integrantes). Es solo un filtro de vista: las notas siguen en las mismas tablas y se guardan por los mismos caminos (`set-calificacion` / `set-calificacion-multi`), así la vista completa y la de grupo siempre coinciden.
+- BD: columna `estudiantes.grupo_trabajo INTEGER` (NULL = sin grupo, fijo todo el año) vía `migrarTablas()`. Métodos en `database.js`: `setGrupoEstudiante`, `asignarGrupos(cursoId, items, reemplazar)`, `quitarGruposCurso`. IPC: `set-grupo-estudiante`, `asignar-grupos`, `quitar-grupos-curso`.
+- `Estudiantes.jsx`: columna Grupo (select por estudiante) + botón "👥 Grupos" (texto `G1: 3, 7, 12`, rangos `10-15`; modo "Agregar/actualizar" o "Reemplazar todo"; "Quitar todos"). Editar/retirar un estudiante no borra su grupo.
+- `Calificaciones.jsx`: chips `Todos · G1… · Sin grupo` (con progreso hechos/total) sobre la lista de notas simple y multi; solo aparecen si el curso tiene grupos. Totales/promedios del pie siguen siendo de todo el curso.
+- Verificado con scripts contra BD aislada (asignar, mover, sacar, reemplazar, conflictos, aislamiento entre cursos, idempotencia, notas/resúmenes multi idénticos antes y después) + `vite build`. UI revisada por el usuario en la ventana real (6to A FIHR, 3 grupos de 4) y notas probadas en las 6 actividades del período 3 (72 escrituras por grupo, vista Todos coincide, grupos ajenos intactos, exceder techo rechazado). Los grupos de la BD de esta PC son de prueba; en la PC real hay que crearlos con "👥 Grupos". La columna se crea sola al abrir la app.
 
 ### Clases desde Portal-Ars + backup en la nube (2026-09-17)
 
@@ -173,6 +180,17 @@ Ubicación: `%APPDATA%\sistema-academico-docente\`
 - [ ] Probar `.exe` instalado en ubicación limpia (particularmente: el botón nuevo "Generar reporte por lote" en Reportes)
 - [ ] Decidir si limpiar los datos de prueba de la BD (sigue sin tocar, a propósito — ver nota abajo)
 - [ ] `git push` + crear release `v1.6.0` en GitHub con `.exe` adjunto
+
+---
+
+## Checklist de cierre v1.8.0
+
+- [x] Grupos de trabajo + filtro en Calificaciones, probado en datos y en la ventana real
+- [x] Bump versión a `1.8.0` en `package.json` + `CHANGELOG.md`
+- [x] Commit local
+- [ ] `npm run build-app` — generar `.exe` (parar `npm run dev` antes)
+- [ ] Instalar en la PC real, crear los grupos con "👥 Grupos" y probar una actividad multi
+- [ ] `git push` + release `v1.8.0` en GitHub con `.exe` adjunto (pendiente que el usuario lo pida)
 
 ---
 

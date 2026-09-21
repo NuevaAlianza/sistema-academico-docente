@@ -1,5 +1,15 @@
 # Changelog — Sistema Académico Docente
 
+## [1.8.0] — 2026-09-20
+
+### Added (Nuevo)
+- Grupos de trabajo: cada estudiante puede pertenecer a un grupo (fijo todo el año) para colocar notas siguiendo el cuaderno por grupos de 5-6 integrantes. Se asignan desde Estudiantes: selector "Grupo" por estudiante, o botón "👥 Grupos" pegando el texto del cuaderno (`G1: 3, 7, 12`, rangos `10-15`) en modo "Agregar / actualizar" o "Reemplazar todo", más "Quitar todos".
+- Calificaciones: filtro `Todos · G1 · G2 … · Sin grupo` (con progreso hechos/total) sobre la lista de notas, en actividades simples y multi. Solo aparece si el curso tiene grupos; con "Todos" la vista es la de siempre.
+
+### Internal (Interno)
+- Columna `estudiantes.grupo_trabajo INTEGER` (NULL = sin grupo) vía `migrarTablas()`. Métodos `setGrupoEstudiante`, `asignarGrupos`, `quitarGruposCurso` en `database.js`; canales IPC `set-grupo-estudiante`, `asignar-grupos`, `quitar-grupos-curso`.
+- El filtro es solo de vista: las notas se guardan por los mismos caminos (`set-calificacion` / `set-calificacion-multi`), por lo que ambas vistas siempre coinciden. Los totales del pie siguen siendo de todo el curso.
+
 ## [1.7.0] — 2026-09-17
 
 ### Added (Nuevo)
