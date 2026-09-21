@@ -79,6 +79,7 @@ export default function CursoEspacio({ anio, materia }) {
   const [popupPunt,    setPopupPunt]    = useState(null)     // { ids, titulo }
   const [puntosTxt,    setPuntosTxt]    = useState('')
   const [motivoTxt,    setMotivoTxt]    = useState('')
+  const [histPunt,     setHistPunt]     = useState(null)     // { est, items }
 
   // ── Bloque: Semáforo ──────────────────────────────────────
   const [semaforo,    setSemaforo]     = useState([])
@@ -168,6 +169,11 @@ export default function CursoEspacio({ anio, materia }) {
     await sumarPuntos(popupPunt.ids, n, motivoTxt)
     showToast(`${n > 0 ? '+' : ''}${n} → ${popupPunt.titulo}`)
     setPopupPunt(null)
+  }
+
+  async function verHistorialPuntos(est) {
+    const items = await window.api.invoke('get-historial-participacion', est.id, id, perSel.id, materiaId)
+    setHistPunt({ est, items: Array.isArray(items) ? items : [] })
   }
 
   function abrirPuntos(ids, titulo) { setPopupPunt({ ids, titulo }); setPuntosTxt(''); setMotivoTxt('') }
@@ -684,7 +690,10 @@ export default function CursoEspacio({ anio, materia }) {
                     <span style={{ fontSize:12, color:'#AAA', fontWeight:600 }}>{est.numero_lista||idx+1}</span>
                     <span style={{ fontSize:13, color:'#1B3A6B', fontWeight:est.en_riesgo?600:400 }}>{est.nombre_completo}{est.en_riesgo&&<span style={{ marginLeft:6 }}>⚠️</span>}</span>
                     <span style={{ fontSize:12, color:'#888', fontWeight:600 }}>{est.grupo_trabajo!=null?'G'+est.grupo_trabajo:'—'}</span>
-                    <span style={{ fontSize:13, fontWeight:700, color:colorPts(est.participacion) }}>{est.participacion!==0?fmtPts(est.participacion):'—'}</span>
+                    <button title="Ver historial" onClick={() => verHistorialPuntos(est)}
+                      style={{ background:'none', border:'none', padding:0, textAlign:'left', fontSize:13, fontWeight:700, color:colorPts(est.participacion), cursor:'pointer', textDecoration:'underline dotted' }}>
+                      {est.participacion!==0?fmtPts(est.participacion):'—'}
+                    </button>
                     <div><Pill estado={est.color_nota}  label={est.promedio!==null?String(est.promedio):'—'} /></div>
                     <div><Pill estado={est.color_asist} label={est.pct_asistencia!==null?`${est.pct_asistencia}%`:'—'} /></div>
                   </div>
@@ -811,6 +820,36 @@ export default function CursoEspacio({ anio, materia }) {
               <button onClick={() => setPopupPunt(null)} style={{ padding:'8px 18px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
               <button onClick={confirmarPuntos} disabled={!(parseInt(puntosTxt,10))}
                 style={{ padding:'8px 20px', background:parseInt(puntosTxt,10)?color:'#CCC', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:parseInt(puntosTxt,10)?'pointer':'default' }}>Aplicar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── POPUP HISTORIAL DE PARTICIPACIÓN ──────────────── */}
+      {histPunt && (
+        <div className="modal-backdrop" style={{ position:'fixed', inset:0, background:'#0004', display:'flex', alignItems:'center', justifyContent:'center', zIndex:900 }}
+          onClick={e => { if (e.target===e.currentTarget) setHistPunt(null) }}>
+          <div className="modal-content" style={{ background:'#fff', borderRadius:14, padding:24, width:460, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
+            <div style={{ fontWeight:700, color:'#1B3A6B', fontSize:15, marginBottom:2 }}>Participación: {histPunt.est.nombre_completo}</div>
+            <div style={{ fontSize:12, color:'#888', marginBottom:12 }}>
+              {perSel?.nombre} · {histPunt.items.length} movimiento(s) · total <strong style={{ color:colorPts(histPunt.est.participacion) }}>{fmtPts(histPunt.est.participacion)}</strong>
+            </div>
+            <div style={{ overflowY:'auto', border:'1px solid #E8EDF5', borderRadius:8 }}>
+              {histPunt.items.length === 0
+                ? <div style={{ padding:20, textAlign:'center', color:'#AAA', fontStyle:'italic', fontSize:13 }}>Sin movimientos en este período.</div>
+                : histPunt.items.map((h, i) => (
+                  <div key={i} style={{ display:'grid', gridTemplateColumns:'84px 44px 1fr', gap:8, padding:'8px 12px', alignItems:'baseline', borderBottom:i<histPunt.items.length-1?'1px solid #F0F4FA':'none', background:i%2===0?'#fff':'#FAFBFD' }}>
+                    <span style={{ fontSize:12, color:'#888' }}>{h.fecha}</span>
+                    <span style={{ fontSize:13, fontWeight:700, color:colorPts(h.puntos) }}>{fmtPts(h.puntos)}</span>
+                    <span style={{ fontSize:12, color:'#555' }}>
+                      {h.motivo || <span style={{ color:'#CCC' }}>sin motivo</span>}
+                      {h.tema && <span style={{ display:'block', fontSize:11, color:'#AAB4C4' }}>Tema: {h.tema}</span>}
+                    </span>
+                  </div>
+                ))}
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', marginTop:14 }}>
+              <button onClick={() => setHistPunt(null)} style={{ padding:'8px 18px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cerrar</button>
             </div>
           </div>
         </div>
