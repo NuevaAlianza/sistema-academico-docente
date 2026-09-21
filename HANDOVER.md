@@ -9,6 +9,9 @@
 
 ## Lo último que se hizo
 
+### Participación por grupo en Cursos (2026-09-21) — sin commitear, probado solo en BD aislada
+Tabla nueva `participaciones` (eventos +/- por estudiante, con fecha, motivo, período, materia, tema del día). Es solo indicador: no toca `calificaciones`. En `CursoEspacio` → "Clase de hoy": filtro por grupo, botones −/+ por estudiante, "±" (cantidad libre + motivo, p. ej. mala práctica), "+1 al grupo", ↶ deshacer el último de hoy. Pestaña "Estado": columnas Grupo y Participación (acumulado del período) + filtro por grupo. IPC: `add-participaciones`, `deshacer-participacion`, `get-participacion-resumen`, `get-historial-participacion`. Pendiente: probar en la ventana real (reiniciar `npm run dev`), clonar temas de 6to A a 6to B/C (`clonarTemas`, con backup antes), y decidir si Estado muestra desglose por competencia multi.
+
 ### Grupos de trabajo para entrada de notas (2026-09-20) — v1.8.0, commiteado, sin push
 Forma alternativa de ver/colocar notas por grupo del cuaderno (5-6 integrantes). Es solo un filtro de vista: las notas siguen en las mismas tablas y se guardan por los mismos caminos (`set-calificacion` / `set-calificacion-multi`), así la vista completa y la de grupo siempre coinciden.
 - BD: columna `estudiantes.grupo_trabajo INTEGER` (NULL = sin grupo, fijo todo el año) vía `migrarTablas()`. Métodos en `database.js`: `setGrupoEstudiante`, `asignarGrupos(cursoId, items, reemplazar)`, `quitarGruposCurso`. IPC: `set-grupo-estudiante`, `asignar-grupos`, `quitar-grupos-curso`.

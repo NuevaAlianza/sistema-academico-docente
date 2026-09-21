@@ -289,6 +289,11 @@ ipcMain.handle('confirmar-import-padron',  (_, anioId, grupos) => db.confirmarIm
 ipcMain.handle('get-estudiantes-sin-nota', (_, cursoId, periodoId, materiaId) =>
   db.getEstudiantesSinNota(cursoId, periodoId, materiaId));
 
+  ipcMain.handle('add-participaciones',     (_, d) => db.addParticipaciones(d));
+  ipcMain.handle('deshacer-participacion',  (_, estId, cursoId, periodoId, mId, fecha) => db.deshacerParticipacion(estId, cursoId, periodoId, mId, fecha));
+  ipcMain.handle('get-participacion-resumen', (_, cursoId, periodoId, mId, fecha) => db.getParticipacionResumen(cursoId, periodoId, mId, fecha));
+  ipcMain.handle('get-historial-participacion', (_, estId, cursoId, periodoId, mId) => db.getHistorialParticipacion(estId, cursoId, periodoId, mId));
+
   ipcMain.handle('get-reporte-grupal',     (_, cursoId, periodoId, materiaId) =>
   db.getReporteGrupal(cursoId, periodoId, materiaId || null));
 

@@ -73,8 +73,15 @@ export default function CursoEspacio({ anio, materia }) {
   const [notaRapida,   setNotaRapida]   = useState('')
   const [notaGuardada, setNotaGuardada] = useState('')
 
+  // ── Bloque: Participación ─────────────────────────────────
+  const [grupoSel,     setGrupoSel]     = useState('todos')  // 'todos' | 'sin' | número
+  const [partic,       setPartic]       = useState({})       // { estId: { hoy, periodo } }
+  const [popupPunt,    setPopupPunt]    = useState(null)     // { ids, titulo }
+  const [puntosTxt,    setPuntosTxt]    = useState('')
+  const [motivoTxt,    setMotivoTxt]    = useState('')
+
   // ── Bloque: Semáforo ──────────────────────────────────────
-  const [semaforo,     setSemaforo]     = useState([])
+  const [semaforo,    setSemaforo]     = useState([])
   const [sinNota,      setSinNota]      = useState(null)
   const [cargandoSem,  setCargandoSem]  = useState(false)
   const [tabSem,       setTabSem]       = useState('semaforo')
@@ -130,7 +137,40 @@ export default function CursoEspacio({ anio, materia }) {
     if (!id || !perSel?.id || !materiaId) return
     cargarTemaDia()
     cargarSemaforo()
+    cargarParticipacion()
   }, [id, perSel?.id, materiaId])
+
+  async function cargarParticipacion() {
+    const r = await window.api.invoke('get-participacion-resumen', id, perSel.id, materiaId, hoy)
+    setPartic(r || {})
+  }
+
+  async function sumarPuntos(ids, puntos, motivo = '') {
+    if (!perSel?.id || !materiaId) { showToast('Selecciona una materia y período'); return }
+    const r = await window.api.invoke('add-participaciones', {
+      cursoId: id, periodoId: perSel.id, materiaId, temaId: temaDia?.id || null,
+      fecha: hoy, puntos, motivo, estudianteIds: ids,
+    })
+    if (r?.error) { showToast('⚠️ ' + r.error); return }
+    await cargarParticipacion()
+    cargarSemaforo()
+  }
+
+  async function deshacerPuntos(estId) {
+    await window.api.invoke('deshacer-participacion', estId, id, perSel.id, materiaId, hoy)
+    await cargarParticipacion()
+    cargarSemaforo()
+  }
+
+  async function confirmarPuntos() {
+    const n = parseInt(puntosTxt, 10)
+    if (!Number.isInteger(n) || n === 0 || !popupPunt) return
+    await sumarPuntos(popupPunt.ids, n, motivoTxt)
+    showToast(`${n > 0 ? '+' : ''}${n} → ${popupPunt.titulo}`)
+    setPopupPunt(null)
+  }
+
+  function abrirPuntos(ids, titulo) { setPopupPunt({ ids, titulo }); setPuntosTxt(''); setMotivoTxt('') }
 
   async function cargarTemaDia() {
     if (!perSel?.id || !materiaId) return
@@ -261,6 +301,13 @@ export default function CursoEspacio({ anio, materia }) {
   const sinMarcar   = estudiantes.length - Object.keys(asistencia).length
   const enRiesgo    = semaforo.filter(e => e.en_riesgo).length
   const sinNotaCnt  = sinNota?.sin_nota?.length ?? 0
+  const gruposDisp  = [...new Set(estudiantes.map(e => e.grupo_trabajo).filter(g => g != null))].sort((a, b) => a - b)
+  const hayGrupos   = gruposDisp.length > 0
+  const haySinGrupo= estudiantes.some(e => e.grupo_trabajo == null)
+  const visibles    = estudiantes.filter(e =>
+    grupoSel === 'todos' ? true : grupoSel === 'sin' ? e.grupo_trabajo == null : e.grupo_trabajo === grupoSel)
+  const fmtPts = n => (n > 0 ? '+' : '') + n
+  const colorPts = n => n > 0 ? '#065F46' : n < 0 ? '#9B1C1C' : '#AAB4C4'
 
   // ─────────────────────────────────────────────────────────
   // RENDER
@@ -447,22 +494,45 @@ export default function CursoEspacio({ anio, materia }) {
               </div>
             </div>
 
+            {/* Filtro por grupo + acciones de grupo */}
+            {hayGrupos && (
+              <div style={{ padding:'8px 16px', borderBottom:'1px solid #E8EDF5', display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                <span style={{ fontSize:11, color:'#888', marginRight:2 }}>Grupo:</span>
+                {[['todos','Todos'], ...gruposDisp.map(g => [g, 'G'+g]), ...(haySinGrupo ? [['sin','Sin grupo']] : [])].map(([k,l]) => (
+                  <button key={k} onClick={() => setGrupoSel(k)} style={{
+                    padding:'4px 12px', borderRadius:14, fontSize:12, fontWeight:600, cursor:'pointer', border:'1.5px solid',
+                    background: grupoSel===k ? color : '#fff', color: grupoSel===k ? '#fff' : '#555', borderColor: grupoSel===k ? color : '#DDE3ED',
+                  }}>{l}</button>
+                ))}
+                {typeof grupoSel === 'number' && (
+                  <span style={{ marginLeft:'auto', display:'flex', gap:6 }}>
+                    <button onClick={async () => { await sumarPuntos(visibles.map(e=>e.id), 1); showToast(`+1 → G${grupoSel} (${visibles.length})`) }}
+                      style={{ padding:'4px 12px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', background:'#D1FAE5', color:'#065F46', border:'1.5px solid #6EE7B7' }}>+1 al grupo</button>
+                    <button onClick={() => abrirPuntos(visibles.map(e=>e.id), `G${grupoSel} (${visibles.length})`)}
+                      style={{ padding:'4px 12px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', background:'#F8FAFD', color:'#555', border:'1.5px solid #DDE3ED' }}>± grupo…</button>
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Columnas header */}
-            <div style={{ display:'grid', gridTemplateColumns:'36px 1fr 160px 40px', gap:6, padding:'7px 16px', background:'#F8FAFD', borderBottom:'1px solid #E8EDF5' }}>
-              {['#','Estudiante','Asistencia',''].map((h,i) => (
+            <div style={{ display:'grid', gridTemplateColumns:'36px 1fr 160px 200px 40px', gap:6, padding:'7px 16px', background:'#F8FAFD', borderBottom:'1px solid #E8EDF5' }}>
+              {['#','Estudiante','Asistencia','Participación hoy / período',''].map((h,i) => (
                 <div key={i} style={{ fontSize:10, fontWeight:700, color:'#AAB4C4', textAlign: i >= 2 ? 'center' : 'left' }}>{h}</div>
               ))}
             </div>
 
             {/* Filas */}
             <div style={{ maxHeight:420, overflowY:'auto' }}>
-              {estudiantes.map((est, idx) => {
+              {visibles.length === 0 && <div style={{ padding:24, textAlign:'center', color:'#AAA', fontStyle:'italic', fontSize:13 }}>Sin estudiantes en este grupo.</div>}
+              {visibles.map((est, idx) => {
                 const est_asist = asistencia[est.id] || null
+                const p = partic[est.id] || { hoy:0, periodo:0 }
                 return (
                   <div key={est.id} style={{
-                    display:'grid', gridTemplateColumns:'36px 1fr 160px 40px',
+                    display:'grid', gridTemplateColumns:'36px 1fr 160px 200px 40px',
                     gap:6, padding:'9px 16px', alignItems:'center',
-                    borderBottom: idx < estudiantes.length-1 ? '1px solid #F0F4FA' : 'none',
+                    borderBottom: idx < visibles.length-1 ? '1px solid #F0F4FA' : 'none',
                     background: idx%2===0 ? '#fff' : '#FAFBFD',
                   }}>
                     {/* Número */}
@@ -491,6 +561,22 @@ export default function CursoEspacio({ anio, materia }) {
                       ))}
                     </div>
 
+                    {/* Participación */}
+                    <div style={{ display:'flex', gap:4, alignItems:'center', justifyContent:'center' }}>
+                      <button title="Restar 1" onClick={() => sumarPuntos([est.id], -1)}
+                        style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #FCA5A5', background:'#FEE2E2', color:'#9B1C1C', fontSize:14, fontWeight:700, cursor:'pointer', lineHeight:1 }}>−</button>
+                      <button title="Sumar 1" onClick={() => sumarPuntos([est.id], 1)}
+                        style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #6EE7B7', background:'#D1FAE5', color:'#065F46', fontSize:14, fontWeight:700, cursor:'pointer', lineHeight:1 }}>+</button>
+                      <button title="Otra cantidad / motivo" onClick={() => abrirPuntos([est.id], est.nombre_completo.split(' ').slice(0,2).join(' '))}
+                        style={{ width:26, height:26, borderRadius:6, border:'1px solid #E2E8F0', background:'#F8FAFD', color:'#888', fontSize:11, fontWeight:700, cursor:'pointer' }}>±</button>
+                      <span style={{ minWidth:64, textAlign:'center', fontSize:12, fontWeight:700, color:colorPts(p.hoy) }} title="Hoy / acumulado del período">
+                        {fmtPts(p.hoy)} <span style={{ color:'#CCC', fontWeight:400 }}>/</span> <span style={{ color:colorPts(p.periodo) }}>{fmtPts(p.periodo)}</span>
+                      </span>
+                      {p.hoy !== 0 && (
+                        <button title="Deshacer el último de hoy" onClick={() => deshacerPuntos(est.id)}
+                          style={{ width:22, height:22, border:'none', background:'transparent', color:'#AAB4C4', fontSize:13, cursor:'pointer' }}>↶</button>
+                      )}
+                    </div>
 
                     {/* Nota estudiante */}
                     <button title="Agregar nota" onClick={() => abrirNotaEst(est)}
@@ -577,18 +663,33 @@ export default function CursoEspacio({ anio, materia }) {
           {tabSem === 'semaforo' && (
             cargandoSem ? <div style={{ padding:32, textAlign:'center', color:'#AAA' }}><div className="spinner" style={{ margin:'0 auto 8px' }} />Cargando...</div>
             : semaforo.length === 0 ? <div className="content-fade-in" style={{ padding:32, textAlign:'center', color:'#AAA', fontStyle:'italic' }}>Sin datos para este período.</div>
-            : <div className="content-fade-in" style={{ maxHeight:400, overflowY:'auto' }}>
-                <div style={{ display:'grid', gridTemplateColumns:'36px 1fr 110px 120px', gap:8, padding:'7px 18px', background:'#F8FAFD', borderBottom:'1px solid #E8EDF5' }}>
-                  {['#','Estudiante','Promedio','Asistencia'].map(h => <div key={h} style={{ fontSize:10, fontWeight:700, color:'#AAB4C4' }}>{h}</div>)}
+            : <div className="content-fade-in">
+                {hayGrupos && (
+                  <div style={{ padding:'8px 18px', borderBottom:'1px solid #E8EDF5', display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
+                    <span style={{ fontSize:11, color:'#888', marginRight:2 }}>Grupo:</span>
+                    {[['todos','Todos'], ...gruposDisp.map(g => [g, 'G'+g]), ...(haySinGrupo ? [['sin','Sin grupo']] : [])].map(([k,l]) => (
+                      <button key={k} onClick={() => setGrupoSel(k)} style={{
+                        padding:'4px 12px', borderRadius:14, fontSize:12, fontWeight:600, cursor:'pointer', border:'1.5px solid',
+                        background: grupoSel===k ? color : '#fff', color: grupoSel===k ? '#fff' : '#555', borderColor: grupoSel===k ? color : '#DDE3ED',
+                      }}>{l}</button>
+                    ))}
+                  </div>
+                )}
+                <div style={{ maxHeight:400, overflowY:'auto' }}>
+                <div style={{ display:'grid', gridTemplateColumns:'36px 1fr 54px 100px 110px 120px', gap:8, padding:'7px 18px', background:'#F8FAFD', borderBottom:'1px solid #E8EDF5' }}>
+                  {['#','Estudiante','Grupo','Participación','Promedio','Asistencia'].map(h => <div key={h} style={{ fontSize:10, fontWeight:700, color:'#AAB4C4' }}>{h}</div>)}
                 </div>
-                {semaforo.map((est, idx) => (
-                  <div key={est.id} style={{ display:'grid', gridTemplateColumns:'36px 1fr 110px 120px', gap:8, padding:'9px 18px', alignItems:'center', borderBottom:idx<semaforo.length-1?'1px solid #F0F4FA':'none', background:est.en_riesgo?'#FFF8F6':idx%2===0?'#fff':'#FAFBFD' }}>
+                {semaforo.filter(e => grupoSel === 'todos' ? true : grupoSel === 'sin' ? e.grupo_trabajo == null : e.grupo_trabajo === grupoSel).map((est, idx, arr) => (
+                  <div key={est.id} style={{ display:'grid', gridTemplateColumns:'36px 1fr 54px 100px 110px 120px', gap:8, padding:'9px 18px', alignItems:'center', borderBottom:idx<arr.length-1?'1px solid #F0F4FA':'none', background:est.en_riesgo?'#FFF8F6':idx%2===0?'#fff':'#FAFBFD' }}>
                     <span style={{ fontSize:12, color:'#AAA', fontWeight:600 }}>{est.numero_lista||idx+1}</span>
                     <span style={{ fontSize:13, color:'#1B3A6B', fontWeight:est.en_riesgo?600:400 }}>{est.nombre_completo}{est.en_riesgo&&<span style={{ marginLeft:6 }}>⚠️</span>}</span>
+                    <span style={{ fontSize:12, color:'#888', fontWeight:600 }}>{est.grupo_trabajo!=null?'G'+est.grupo_trabajo:'—'}</span>
+                    <span style={{ fontSize:13, fontWeight:700, color:colorPts(est.participacion) }}>{est.participacion!==0?fmtPts(est.participacion):'—'}</span>
                     <div><Pill estado={est.color_nota}  label={est.promedio!==null?String(est.promedio):'—'} /></div>
                     <div><Pill estado={est.color_asist} label={est.pct_asistencia!==null?`${est.pct_asistencia}%`:'—'} /></div>
                   </div>
                 ))}
+                </div>
               </div>
           )}
 
@@ -679,6 +780,37 @@ export default function CursoEspacio({ anio, materia }) {
                 style={{ padding:'8px 20px', background:notaTxt.trim()?color:'#CCC', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:notaTxt.trim()?'pointer':'default' }}>
                 {guardandoNota ? 'Guardando...' : 'Guardar'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── POPUP PUNTOS DE PARTICIPACIÓN ─────────────────── */}
+      {popupPunt && (
+        <div className="modal-backdrop" style={{ position:'fixed', inset:0, background:'#0004', display:'flex', alignItems:'center', justifyContent:'center', zIndex:900 }}
+          onClick={e => { if (e.target===e.currentTarget) setPopupPunt(null) }}>
+          <div className="modal-content" style={{ background:'#fff', borderRadius:14, padding:24, width:380, boxShadow:'0 16px 48px #0004' }}>
+            <div style={{ fontWeight:700, color:'#1B3A6B', fontSize:15, marginBottom:4 }}>± Puntos: {popupPunt.titulo}</div>
+            <div style={{ fontSize:12, color:'#888', marginBottom:14 }}>{hoy} · solo indicador, no cambia la nota</div>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:12 }}>
+              {[-5,-3,-2,-1,1,2,3,5].map(n => (
+                <button key={n} onClick={() => setPuntosTxt(String(n))} style={{
+                  padding:'6px 12px', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', border:'1.5px solid',
+                  background: puntosTxt===String(n) ? (n>0?'#065F46':'#9B1C1C') : (n>0?'#D1FAE5':'#FEE2E2'),
+                  color:      puntosTxt===String(n) ? '#fff' : (n>0?'#065F46':'#9B1C1C'),
+                  borderColor: n>0?'#6EE7B7':'#FCA5A5',
+                }}>{fmtPts(n)}</button>
+              ))}
+              <input type="number" value={puntosTxt} onChange={e => setPuntosTxt(e.target.value)} placeholder="otro"
+                style={{ width:70, border:'1.5px solid #DDE3ED', borderRadius:8, padding:'6px 8px', fontSize:13, outline:'none' }} />
+            </div>
+            <input value={motivoTxt} onChange={e => setMotivoTxt(e.target.value)} placeholder="Motivo (opcional): ej. celular en clase, conversó..." maxLength={200}
+              onKeyDown={e => { if (e.key==='Enter') confirmarPuntos() }}
+              style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'10px 12px', fontSize:13, outline:'none', boxSizing:'border-box', marginBottom:14 }} />
+            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+              <button onClick={() => setPopupPunt(null)} style={{ padding:'8px 18px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
+              <button onClick={confirmarPuntos} disabled={!(parseInt(puntosTxt,10))}
+                style={{ padding:'8px 20px', background:parseInt(puntosTxt,10)?color:'#CCC', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:parseInt(puntosTxt,10)?'pointer':'default' }}>Aplicar</button>
             </div>
           </div>
         </div>

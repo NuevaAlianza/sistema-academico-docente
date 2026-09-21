@@ -99,6 +99,8 @@ class SistemaDB {
     this.db.exec("CREATE TABLE IF NOT EXISTS tema_archivos (id INTEGER PRIMARY KEY AUTOINCREMENT, tema_id INTEGER NOT NULL, nombre TEXT NOT NULL, ruta TEXT NOT NULL, tipo TEXT DEFAULT 'file', fecha TEXT, FOREIGN KEY (tema_id) REFERENCES temas(id))");
     this.db.exec("CREATE TABLE IF NOT EXISTS curso_nota_rapida (id INTEGER PRIMARY KEY AUTOINCREMENT, curso_id INTEGER NOT NULL, materia_id INTEGER, texto TEXT DEFAULT '', updated_at TEXT, UNIQUE(curso_id, materia_id), FOREIGN KEY (curso_id) REFERENCES cursos(id) ON DELETE CASCADE)");
     this.db.exec("CREATE TABLE IF NOT EXISTS curso_anotaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, curso_id INTEGER NOT NULL, materia_id INTEGER, fecha TEXT NOT NULL, texto TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (curso_id) REFERENCES cursos(id) ON DELETE CASCADE)");
+    this.db.exec("CREATE TABLE IF NOT EXISTS participaciones (id INTEGER PRIMARY KEY AUTOINCREMENT, estudiante_id INTEGER NOT NULL, curso_id INTEGER NOT NULL, materia_id INTEGER, periodo_id INTEGER NOT NULL, tema_id INTEGER, fecha TEXT NOT NULL, puntos INTEGER NOT NULL, motivo TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (estudiante_id) REFERENCES estudiantes(id) ON DELETE CASCADE)");
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_participaciones_curso ON participaciones (curso_id, periodo_id, materia_id)");
   }
 
   seedDatos() {
@@ -811,8 +813,50 @@ deleteEstudiante(id) {
       if(asists.length>0)pct_asistencia=Math.round(asists.filter(a=>a.estado==='presente').length/asists.length*100);
       const color_nota=promedio===null?'sin_nota':promedio>=semVerde?'verde':promedio>=semAmar?'amarillo':'rojo';
       const color_asist=pct_asistencia===null?'sin_dato':pct_asistencia>=semVerde?'verde':pct_asistencia>=semAmar?'amarillo':'rojo';
-      return {id:est.id,nombre_completo:est.nombre_completo,numero_lista:est.numero_lista,promedio,pct_asistencia,color_nota,color_asist,en_riesgo:(promedio!==null&&promedio<minimo)||(pct_asistencia!==null&&pct_asistencia<semVerde)};
+      const participacion=this.db.prepare("SELECT COALESCE(SUM(puntos),0) AS t FROM participaciones WHERE estudiante_id=? AND curso_id=? AND periodo_id=? AND materia_id IS ?").get(est.id,cursoId,periodoId,materiaId||null).t;
+      return {id:est.id,nombre_completo:est.nombre_completo,numero_lista:est.numero_lista,grupo_trabajo:est.grupo_trabajo,participacion,promedio,pct_asistencia,color_nota,color_asist,en_riesgo:(promedio!==null&&promedio<minimo)||(pct_asistencia!==null&&pct_asistencia<semVerde)};
     });
+  }
+
+  // Participación: eventos +/- por estudiante. Es solo un indicador, no toca calificaciones.
+  // d = { cursoId, periodoId, materiaId, temaId, fecha, puntos, motivo, estudianteIds }
+  addParticipaciones(d) {
+    const puntos = Number(d && d.puntos);
+    if (!Number.isInteger(puntos) || puntos === 0 || Math.abs(puntos) > 100) return { error: 'Puntos inválidos' };
+    if (!d.cursoId || !d.periodoId || !d.fecha) return { error: 'Faltan curso, período o fecha' };
+    const ids = [...new Set((d.estudianteIds || []).map(Number))].filter(n => Number.isInteger(n) && n > 0);
+    if (ids.length === 0) return { error: 'Sin estudiantes' };
+    const valido = this.db.prepare("SELECT 1 FROM estudiantes WHERE id=? AND curso_id=? AND estado='activo'");
+    const ins = this.db.prepare("INSERT INTO participaciones (estudiante_id,curso_id,materia_id,periodo_id,tema_id,fecha,puntos,motivo) VALUES (?,?,?,?,?,?,?,?)");
+    let registrados = 0;
+    this.db.transaction(() => {
+      for (const id of ids) {
+        if (!valido.get(id, d.cursoId)) continue;
+        ins.run(id, d.cursoId, d.materiaId || null, d.periodoId, d.temaId || null, d.fecha, puntos, String(d.motivo || '').trim().slice(0, 200));
+        registrados++;
+      }
+    })();
+    return { registrados };
+  }
+
+  // Deshace el último evento del estudiante en esa fecha (mismo curso/período/materia).
+  deshacerParticipacion(estudianteId, cursoId, periodoId, materiaId, fecha) {
+    const row = this.db.prepare("SELECT id FROM participaciones WHERE estudiante_id=? AND curso_id=? AND periodo_id=? AND materia_id IS ? AND fecha=? ORDER BY id DESC LIMIT 1").get(estudianteId, cursoId, periodoId, materiaId || null, fecha);
+    if (!row) return { deshecho: 0 };
+    this.db.prepare("DELETE FROM participaciones WHERE id=?").run(row.id);
+    return { deshecho: 1 };
+  }
+
+  // { [estudiante_id]: { hoy, periodo } }
+  getParticipacionResumen(cursoId, periodoId, materiaId, fecha) {
+    const rows = this.db.prepare("SELECT estudiante_id, SUM(puntos) AS periodo, SUM(CASE WHEN fecha=? THEN puntos ELSE 0 END) AS hoy FROM participaciones WHERE curso_id=? AND periodo_id=? AND materia_id IS ? GROUP BY estudiante_id").all(fecha, cursoId, periodoId, materiaId || null);
+    const out = {};
+    for (const r of rows) out[r.estudiante_id] = { hoy: r.hoy, periodo: r.periodo };
+    return out;
+  }
+
+  getHistorialParticipacion(estudianteId, cursoId, periodoId, materiaId) {
+    return this.db.prepare("SELECT p.fecha, p.puntos, p.motivo, t.titulo AS tema FROM participaciones p LEFT JOIN temas t ON t.id=p.tema_id WHERE p.estudiante_id=? AND p.curso_id=? AND p.periodo_id=? AND p.materia_id IS ? ORDER BY p.fecha DESC, p.id DESC").all(estudianteId, cursoId, periodoId, materiaId || null);
   }
 
   getEstudiantesSinNota(cursoId, periodoId, materiaId) {
