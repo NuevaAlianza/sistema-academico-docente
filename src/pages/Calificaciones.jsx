@@ -30,6 +30,7 @@ export default function Calificaciones({ anio, materia }) {
   const [actSel,      setActSel]      = useState(null)
   const [califs,      setCalifs]      = useState([])
   const [estudiantes, setEstudiantes] = useState([])
+  const [grupoFiltro, setGrupoFiltro] = useState(null) // null = todos | número de grupo | 'sin'
   const [modalAct,    setModalAct]    = useState(false)
   const [form,        setForm]        = useState(VACIO)
   const [editandoId,    setEditandoId]    = useState(null)
@@ -81,6 +82,7 @@ useEffect(() => {
 
   useEffect(() => {
     if (!cursoSel) return
+    setGrupoFiltro(null)
     window.api.invoke('get-estudiantes', cursoSel.id).then(ests => {
       setEstudiantes(ests)
       setCalifs([])
@@ -1258,6 +1260,26 @@ useEffect(() => {
           const compsMulti = COMPETENCIAS.filter(c => compsMultiRaw.includes(c.key)).map(c => c.key)
           const COL_MULTI = Object.fromEntries(COMPETENCIAS.map(c => [c.key, c.color]))
 
+          // Filtro por grupo de trabajo: solo cambia qué filas se ven. Notas, guardado y
+          // promedios siguen usando `califs` completo, así ambas vistas quedan siempre en sync.
+          const gruposDisp = [...new Set(califs.map(e => e.grupo_trabajo).filter(g => g != null))].sort((a, b) => a - b)
+          const haySinGrupo = gruposDisp.length > 0 && califs.some(e => e.grupo_trabajo == null)
+          const filtroActivo = grupoFiltro !== null && (grupoFiltro === 'sin' ? haySinGrupo : gruposDisp.includes(grupoFiltro))
+          const califsVis = !filtroActivo ? califs
+            : grupoFiltro === 'sin' ? califs.filter(e => e.grupo_trabajo == null)
+            : califs.filter(e => e.grupo_trabajo === grupoFiltro)
+          const chipGrupo = (key, label, lista) => {
+            const on = key === null ? !filtroActivo : filtroActivo && grupoFiltro === key
+            const hechos = lista.filter(e => e.nota !== '').length
+            return (
+              <button key={String(key)} onClick={() => setGrupoFiltro(key)}
+                style={{ padding:'5px 12px', borderRadius:16, fontSize:12, fontWeight:700, cursor:'pointer',
+                  border:'1.5px solid '+(on ? colPer : '#DDE3ED'), background: on ? colPer : '#fff', color: on ? '#fff' : '#1B3A6B' }}>
+                {label} <span style={{ opacity:.75, fontWeight:600 }}>{hechos}/{lista.length}</span>
+              </button>
+            )
+          }
+
           return (
             <div>
               <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
@@ -1280,6 +1302,16 @@ useEffect(() => {
                 )}
               </div>
 
+              {/* ── FILTRO POR GRUPO (solo si el curso tiene grupos asignados) ── */}
+              {gruposDisp.length > 0 && (
+                <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginBottom:12 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:'#7A8FA8', marginRight:2 }}>👥 GRUPO</span>
+                  {chipGrupo(null, 'Todos', califs)}
+                  {gruposDisp.map(g => chipGrupo(g, 'G'+g, califs.filter(e => e.grupo_trabajo === g)))}
+                  {haySinGrupo && chipGrupo('sin', 'Sin grupo', califs.filter(e => e.grupo_trabajo == null))}
+                </div>
+              )}
+
               {/* ── MODO SIMPLE ── */}
               {!esMulti && (
                 <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001', overflow:'hidden' }}>
@@ -1290,7 +1322,7 @@ useEffect(() => {
                   </div>
                   {califs.length === 0
                     ? <div style={{ padding:30, textAlign:'center', color:'#888', fontSize:13 }}>Agrega estudiantes al curso primero</div>
-                    : califs.map((e, idx) => {
+                    : califsVis.map((e, idx) => {
                       const n = e.nota===''?null:Number(e.nota)
                       const col = colorNota(n)
                       return (
@@ -1357,7 +1389,7 @@ useEffect(() => {
                     </div>
                     {califs.length === 0
                       ? <div style={{ padding:30, textAlign:'center', color:'#888', fontSize:13 }}>Agrega estudiantes al curso primero</div>
-                      : califs.map((e, idx) => {
+                      : califsVis.map((e, idx) => {
                         const guardado = e.nota !== ''
                         const dist     = distribuciones[e.id] || defaultDist(compsMulti)
                         const notaGlobal = Math.round(Object.values(dist).reduce((a, b) => a + Number(b||0), 0) * 10) / 10
@@ -1402,6 +1434,7 @@ useEffect(() => {
                       <div style={{ padding:'10px 16px', background:'#F8FAFD', borderTop:'2px solid #E8EDF5', fontSize:12, color:'#888' }}>
                         Con nota: <strong style={{ color:'#1B3A6B' }}>{conNota.length}/{califs.length}</strong>
                         {prom !== null && <> · Promedio: <strong style={{ color:colorProm }}>{prom}</strong></>}
+                        {filtroActivo && <span style={{ marginLeft:10, fontStyle:'italic' }}>(totales de todo el curso)</span>}
                       </div>
                     )}
                   </div>

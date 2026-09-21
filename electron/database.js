@@ -47,6 +47,7 @@ class SistemaDB {
       { tabla: 'temas',                col: 'materia_id',          def: 'INTEGER' },
       { tabla: 'curso_nota_rapida',    col: 'materia_id',          def: 'INTEGER' },
       { tabla: 'curso_anotaciones',    col: 'materia_id',          def: 'INTEGER' },
+      { tabla: 'estudiantes',          col: 'grupo_trabajo',       def: 'INTEGER' },
     ]
     for (const { tabla, col, def } of columnas) {
       try {
@@ -297,6 +298,62 @@ class SistemaDB {
   getEstudiantes(cursoId) { return this.db.prepare("SELECT * FROM estudiantes WHERE curso_id=? AND estado='activo' ORDER BY numero_lista,nombre_completo").all(cursoId); }
   createEstudiante(d) { return this.db.prepare("INSERT INTO estudiantes (curso_id,codigo_unico,numero_lista,nombre_completo) VALUES (?,?,?,?)").run(d.cursoId, d.codigo||'', d.numero||0, d.nombre); }
   updateEstudiante(id, d) { return this.db.prepare("UPDATE estudiantes SET nombre_completo=?,codigo_unico=?,numero_lista=?,estado=? WHERE id=?").run(d.nombre, d.codigo||'', d.numero||0, d.estado||'activo', id); }
+  // Grupos de trabajo del cuaderno (fijos todo el año). NULL = sin grupo.
+  // Solo afecta cómo se filtra la vista de notas; no toca calificaciones.
+  setGrupoEstudiante(estudianteId, grupo) {
+    const g = (grupo === null || grupo === '' || grupo === undefined) ? null : Number(grupo);
+    if (g !== null && (!Number.isInteger(g) || g < 1)) return { error: 'Grupo inválido' };
+    const r = this.db.prepare("UPDATE estudiantes SET grupo_trabajo=? WHERE id=?").run(g, estudianteId);
+    return { cambiados: r.changes };
+  }
+
+  // items: [{ grupo, numeros: [numero_lista, ...] }]. Los números se ubican por
+  // numero_lista entre los estudiantes activos del curso.
+  // reemplazar=false: solo agrega/mueve los listados, los demás quedan como están.
+  // reemplazar=true: además saca de grupo a los activos que no aparezcan.
+  asignarGrupos(cursoId, items, reemplazar) {
+    const vistos = new Map();
+    for (const it of items || []) {
+      const g = Number(it && it.grupo);
+      if (!Number.isInteger(g) || g < 1) return { error: 'Grupo inválido: ' + (it && it.grupo) };
+      for (const n of it.numeros || []) {
+        const num = Number(n);
+        if (!Number.isInteger(num) || num < 1) return { error: 'Número de lista inválido: ' + n };
+        if (vistos.has(num) && vistos.get(num) !== g) {
+          return { error: `El número ${num} aparece en el grupo ${vistos.get(num)} y en el grupo ${g}` };
+        }
+        vistos.set(num, g);
+      }
+    }
+    const activos = this.getEstudiantes(cursoId);
+    const porNumero = new Map();
+    for (const e of activos) if (!porNumero.has(e.numero_lista)) porNumero.set(e.numero_lista, e);
+    const noEncontrados = [...vistos.keys()].filter(n => !porNumero.has(n));
+    const upd = this.db.prepare("UPDATE estudiantes SET grupo_trabajo=? WHERE id=? AND curso_id=?");
+    let asignados = 0, sacados = 0;
+    this.db.transaction(() => {
+      const tocados = new Set();
+      for (const [num, g] of vistos) {
+        const e = porNumero.get(num);
+        if (!e) continue;
+        upd.run(g, e.id, cursoId);
+        tocados.add(e.id);
+        asignados++;
+      }
+      if (reemplazar) {
+        for (const e of activos) {
+          if (!tocados.has(e.id) && e.grupo_trabajo !== null) { upd.run(null, e.id, cursoId); sacados++; }
+        }
+      }
+    })();
+    return { asignados, sacados, noEncontrados };
+  }
+
+  quitarGruposCurso(cursoId) {
+    const r = this.db.prepare("UPDATE estudiantes SET grupo_trabajo=NULL WHERE curso_id=? AND grupo_trabajo IS NOT NULL").run(cursoId);
+    return { sacados: r.changes };
+  }
+
   importarEstudiantes(cursoId, lista) {
     const ins = this.db.prepare("INSERT INTO estudiantes (curso_id,codigo_unico,numero_lista,nombre_completo) VALUES (?,?,?,?)");
     let insertados = 0, omitidos = 0;

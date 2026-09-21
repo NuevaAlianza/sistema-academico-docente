@@ -187,6 +187,9 @@ app.whenReady().then(() => {
   ipcMain.handle('create-estudiante',   (_, d)             => db.createEstudiante(d));
   ipcMain.handle('update-estudiante',   (_, id, d)         => db.updateEstudiante(id, d));
   ipcMain.handle('importar-estudiantes',(_, cursoId, lista) => db.importarEstudiantes(cursoId, lista));
+  ipcMain.handle('set-grupo-estudiante',(_, id, grupo)      => db.setGrupoEstudiante(id, grupo));
+  ipcMain.handle('asignar-grupos',      (_, cursoId, items, reemplazar) => db.asignarGrupos(cursoId, items, !!reemplazar));
+  ipcMain.handle('quitar-grupos-curso', (_, cursoId)        => db.quitarGruposCurso(cursoId));
   
 ipcMain.handle('get-estudiantes-todos', (_, cursoId) => db.getEstudiantesTodos(cursoId));
 ipcMain.handle('delete-estudiante',     (_, id)      => db.deleteEstudiante(id));

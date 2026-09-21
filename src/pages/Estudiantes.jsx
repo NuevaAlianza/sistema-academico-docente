@@ -35,6 +35,9 @@ export default function Estudiantes({ anio, materia }) {
   const [padronGrupos,     setPadronGrupos]     = useState([])
   const [padronCargando,   setPadronCargando]   = useState(false)
   const [padronResultado,  setPadronResultado]  = useState(null)
+  const [modalGrupos,     setModalGrupos]     = useState(false)
+  const [grupoTexto,      setGrupoTexto]      = useState('')
+  const [grupoReemplazar, setGrupoReemplazar] = useState(false)
   const [perfil,          setPerfil]          = useState(null)
   const [perfilData,      setPerfilData]      = useState(null)
   const [cargandoPerfil,  setCargandoPerfil]  = useState(false)
@@ -42,6 +45,7 @@ export default function Estudiantes({ anio, materia }) {
   const modalT       = useModalTransition(modal)
   const modalImportT = useModalTransition(modalImport)
   const modalPadronT = useModalTransition(modalPadron)
+  const modalGruposT = useModalTransition(modalGrupos)
   const confirmT     = useModalTransition(confirm)
 
   useEffect(() => {
@@ -83,6 +87,53 @@ export default function Estudiantes({ anio, materia }) {
   function pedirConfirm(msg, fn) { setConfirm({ msg, fn }) }
   function abrirNuevo()   { setForm(VACIO); setEditId(null); setModal(true) }
   function abrirEditar(e) { setForm({ nombre:e.nombre_completo, codigo:e.codigo_unico||'', numero:String(e.numero_lista) }); setEditId(e.id); setModal(true) }
+
+  const activosLista  = estudiantes.filter(e => e.estado === 'activo')
+  const maxGrupo      = activosLista.reduce((m, e) => Math.max(m, e.grupo_trabajo || 0), 0)
+  const opcionesGrupo = Array.from({ length: Math.max(10, maxGrupo + 1) }, (_, i) => i + 1)
+  const nGrupos       = new Set(activosLista.map(e => e.grupo_trabajo).filter(g => g != null)).size
+  const hayGrupos     = nGrupos > 0
+  const grupoParse    = parseGrupos(grupoTexto)
+  const grupoSinLista = grupoParse.items.flatMap(it => it.numeros)
+    .filter(n => !activosLista.some(e => e.numero_lista === n))
+
+  function abrirGrupos() {
+    setGrupoTexto(textoGruposActuales(activosLista))
+    setGrupoReemplazar(false)
+    setModalGrupos(true)
+  }
+
+  async function cambiarGrupo(e, valor) {
+    const res = await window.api.invoke('set-grupo-estudiante', e.id, valor === '' ? null : Number(valor))
+    if (res?.error) { toast2('❌ ' + res.error); return }
+    cargarEstudiantes()
+  }
+
+  async function aplicarGrupos() {
+    const { items, errores } = grupoParse
+    if (errores.length > 0 || items.length === 0) return
+    const ejecutar = async () => {
+      const res = await window.api.invoke('asignar-grupos', cursoSel.id, items, grupoReemplazar)
+      if (res?.error) { toast2('❌ ' + res.error); return }
+      setModalGrupos(false)
+      cargarEstudiantes()
+      toast2(`👥 ${res.asignados} asignados${res.sacados ? `, ${res.sacados} sacados de grupo` : ''}${res.noEncontrados.length ? ` · sin encontrar: ${res.noEncontrados.join(', ')}` : ''}`)
+    }
+    if (grupoReemplazar) {
+      pedirConfirm('Se reemplazarán los grupos de todo el curso.\n\nLos estudiantes que no aparezcan en la lista quedarán "Sin grupo". Sus calificaciones no se tocan.', ejecutar)
+    } else {
+      ejecutar()
+    }
+  }
+
+  function quitarTodosLosGrupos() {
+    pedirConfirm(`¿Quitar todos los grupos de "${cursoSel.nombre}"?\n\nLos estudiantes quedan "Sin grupo". Sus calificaciones no se tocan.`, async () => {
+      await window.api.invoke('quitar-grupos-curso', cursoSel.id)
+      setModalGrupos(false)
+      cargarEstudiantes()
+      toast2('👥 Grupos eliminados')
+    })
+  }
 
   async function retirarEstudiante(e) {
     pedirConfirm(
@@ -367,6 +418,10 @@ export default function Estudiantes({ anio, materia }) {
                 style={{ padding:'8px 14px', background:'#00695C', color:'#fff', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>
                 📥 Importar
               </button>
+              <button onClick={abrirGrupos}
+                style={{ padding:'8px 14px', background:'#EEF2F7', color:'#1B3A6B', border:'1.5px solid #DDE3ED', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                👥 Grupos{hayGrupos ? ` (${nGrupos})` : ''}
+              </button>
               <button onClick={abrirNuevo}
                 style={{ padding:'8px 16px', background:'#1B3A6B', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>
                 + Agregar
@@ -407,8 +462,8 @@ export default function Estudiantes({ anio, materia }) {
         ) : (
           <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', overflow:'hidden' }}>
             {/* Cabecera tabla */}
-            <div style={{ display:'grid', gridTemplateColumns:'56px 1fr 110px 100px 110px', background:'#1B3A6B', padding:'10px 16px', gap:10 }}>
-              {['#','Nombre','Código','Estado','Acciones'].map(h => (
+            <div style={{ display:'grid', gridTemplateColumns:'56px 1fr 84px 110px 100px 110px', background:'#1B3A6B', padding:'10px 16px', gap:10 }}>
+              {['#','Nombre','Grupo','Código','Estado','Acciones'].map(h => (
                 <div key={h} style={{ color:'#9BBFED', fontSize:11, fontWeight:700 }}>{h}</div>
               ))}
             </div>
@@ -417,7 +472,7 @@ export default function Estudiantes({ anio, materia }) {
               const retirado = e.estado !== 'activo'
               return (
                 <div key={e.id} style={{
-                  display:'grid', gridTemplateColumns:'56px 1fr 110px 100px 110px',
+                  display:'grid', gridTemplateColumns:'56px 1fr 84px 110px 100px 110px',
                   padding:'10px 16px', gap:10, alignItems:'center',
                   borderTop: idx>0 ? '1px solid #F0F4FA' : 'none',
                   background: retirado ? '#FFFBF0' : idx%2===0 ? '#fff' : '#FAFBFD',
@@ -431,6 +486,18 @@ export default function Estudiantes({ anio, materia }) {
                       textDecoration: retirado ? 'line-through' : 'underline',
                       textDecorationStyle:'dotted', textUnderlineOffset:3 }}>
                     {busqueda.trim() ? destacar(e.nombre_completo, busqueda) : e.nombre_completo}
+                  </div>
+
+                  <div>
+                    {retirado
+                      ? <span style={{ fontSize:12, color:'#888' }}>{e.grupo_trabajo ? 'G'+e.grupo_trabajo : '—'}</span>
+                      : <select value={e.grupo_trabajo ?? ''} onChange={ev => cambiarGrupo(e, ev.target.value)}
+                          title="Grupo de trabajo"
+                          style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:6, padding:'3px 4px', fontSize:12, fontWeight:700, color: e.grupo_trabajo ? '#1B3A6B' : '#AAB4C4', background:'#fff', cursor:'pointer' }}>
+                          <option value="">—</option>
+                          {opcionesGrupo.map(g => <option key={g} value={g}>G{g}</option>)}
+                        </select>
+                    }
                   </div>
 
                   <div style={{ fontSize:12, color:'#888' }}>{e.codigo_unico || '—'}</div>
@@ -755,6 +822,54 @@ export default function Estudiantes({ anio, materia }) {
         </div>
       )}
 
+      {/* ── MODAL GRUPOS DE TRABAJO ── */}
+      {modalGruposT && (
+        <div className="modal-backdrop" data-closing={modalGruposT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+          onClick={e => { if (e.target===e.currentTarget) setModalGrupos(false) }}>
+          <div className="modal-content" data-closing={modalGruposT.closing} style={{ background:'#fff', borderRadius:14, padding:28, width:520, maxHeight:'85vh', overflowY:'auto', boxShadow:'0 16px 48px #0004' }}>
+            <h2 style={{ color:'#1B3A6B', marginBottom:6, fontSize:17 }}>👥 Grupos de trabajo</h2>
+            <p style={{ color:'#888', fontSize:12, marginBottom:14 }}>
+              {cursoSel?.nombre} — un grupo por línea con los <strong>números de lista</strong> de sus integrantes. También puedes cambiar el grupo de cada estudiante desde la lista.
+            </p>
+            <textarea value={grupoTexto} onChange={e => setGrupoTexto(e.target.value)} rows={8}
+              placeholder={'G1: 3, 7, 12, 20, 31, 38\nG2: 1, 5, 9, 14, 22\nG3: 10-15'}
+              style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'9px 12px', fontSize:13, fontFamily:'monospace', outline:'none', boxSizing:'border-box', resize:'vertical' }}
+              onFocus={e => e.target.style.borderColor='#2563A8'} onBlur={e => e.target.style.borderColor='#DDE3ED'} />
+            <div style={{ fontSize:12, minHeight:18, margin:'6px 0 12px' }}>
+              {grupoParse.errores.length > 0
+                ? <span style={{ color:'#B71C1C' }}>⚠ {grupoParse.errores[0]}</span>
+                : grupoParse.items.length > 0
+                  ? <span style={{ color:'#166534' }}>
+                      {grupoParse.items.length} grupo(s) · {grupoParse.items.reduce((s, it) => s + it.numeros.length, 0)} estudiante(s)
+                      {grupoSinLista.length > 0 && <span style={{ color:'#92400E' }}> · ⚠ no están en la lista: {[...new Set(grupoSinLista)].join(', ')}</span>}
+                    </span>
+                  : <span style={{ color:'#AAB4C4' }}>Escribe al menos un grupo</span>}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
+              {[
+                { val:false, t:'Agregar / actualizar', d:'Solo toca a los listados (los mueve si ya tenían otro grupo). Los demás quedan como están.' },
+                { val:true,  t:'Reemplazar todo',      d:'Lo que no aparezca en el texto queda "Sin grupo". Úsalo para sacar a alguien.' },
+              ].map(o => (
+                <label key={String(o.val)} style={{ display:'flex', gap:8, alignItems:'flex-start', fontSize:12, cursor:'pointer',
+                  padding:'8px 10px', borderRadius:8, border:'1.5px solid '+(grupoReemplazar===o.val?'#2563A8':'#DDE3ED'), background: grupoReemplazar===o.val?'#EEF5FF':'#fff' }}>
+                  <input type="radio" checked={grupoReemplazar===o.val} onChange={() => setGrupoReemplazar(o.val)} style={{ marginTop:2 }} />
+                  <span><strong style={{ color:'#1B3A6B' }}>{o.t}</strong><br/><span style={{ color:'#888' }}>{o.d}</span></span>
+                </label>
+              ))}
+            </div>
+            <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+              {hayGrupos && (
+                <button onClick={quitarTodosLosGrupos} style={{ padding:'9px 14px', background:'#FDDFDF', color:'#B71C1C', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>Quitar todos</button>
+              )}
+              <div style={{ flex:1 }} />
+              <button onClick={() => setModalGrupos(false)} style={{ padding:'9px 20px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
+              <button onClick={aplicarGrupos} disabled={grupoParse.errores.length > 0 || grupoParse.items.length === 0}
+                style={{ padding:'9px 24px', background:(grupoParse.errores.length > 0 || grupoParse.items.length === 0)?'#CCC':'#1B3A6B', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>Aplicar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── MODAL CONFIRMAR ── */}
       {confirmT && (
         <div className="modal-backdrop" data-closing={confirmT.closing} style={{ position:'fixed', inset:0, background:'#0006', display:'flex', alignItems:'center', justifyContent:'center', zIndex:700 }}>
@@ -779,6 +894,44 @@ const btnSm = (bg, color) => ({
   background:bg, color, fontSize:13, cursor:'pointer', display:'flex',
   alignItems:'center', justifyContent:'center', flexShrink:0,
 })
+
+// "G1: 3, 7, 12" / "Grupo 2: 1 5 9" / "3: 10-15" -> [{ grupo, numeros }]
+function parseGrupos(texto) {
+  const porGrupo = new Map()
+  const errores = []
+  texto.split(/\r?\n/).forEach((linea, i) => {
+    if (!linea.trim()) return
+    const m = linea.match(/^\s*(?:grupo|g)?\s*(\d+)\s*[:=]\s*(.*)$/i)
+    if (!m || Number(m[1]) < 1) { errores.push(`Línea ${i + 1} no se entiende: "${linea.trim()}" (usa "G1: 3, 7, 12")`); return }
+    const g = Number(m[1])
+    const nums = porGrupo.get(g) || []
+    for (const tok of m[2].split(/[\s,;]+/).filter(Boolean)) {
+      const r = tok.match(/^(\d+)-(\d+)$/)
+      if (/^\d+$/.test(tok) && Number(tok) >= 1) nums.push(Number(tok))
+      else if (r && Number(r[1]) >= 1 && Number(r[1]) <= Number(r[2]) && Number(r[2]) - Number(r[1]) <= 100) {
+        for (let n = Number(r[1]); n <= Number(r[2]); n++) nums.push(n)
+      } else { errores.push(`Línea ${i + 1}: "${tok}" no es un número de lista válido`); return }
+    }
+    porGrupo.set(g, nums)
+  })
+  const dueno = new Map()
+  for (const [g, nums] of porGrupo) for (const n of nums) {
+    if (dueno.has(n) && dueno.get(n) !== g) errores.push(`El número ${n} aparece en G${dueno.get(n)} y en G${g}`)
+    dueno.set(n, g)
+  }
+  const items = [...porGrupo].sort((a, b) => a[0] - b[0]).map(([grupo, nums]) => ({ grupo, numeros: [...new Set(nums)] }))
+  return { items, errores: [...new Set(errores)] }
+}
+
+function textoGruposActuales(activos) {
+  const porGrupo = new Map()
+  for (const e of activos) if (e.grupo_trabajo != null) {
+    if (!porGrupo.has(e.grupo_trabajo)) porGrupo.set(e.grupo_trabajo, [])
+    porGrupo.get(e.grupo_trabajo).push(e.numero_lista)
+  }
+  return [...porGrupo].sort((a, b) => a[0] - b[0])
+    .map(([g, nums]) => `G${g}: ${nums.sort((a, b) => a - b).join(', ')}`).join('\n')
+}
 
 function destacar(texto, busqueda) {
   const idx = texto.toLowerCase().indexOf(busqueda.toLowerCase())
