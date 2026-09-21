@@ -1,7 +1,7 @@
 # HANDOVER.md — Estado actual del proyecto
 # Sistema Académico Docente
 
-**Versión:** 1.8.0
+**Versión:** 1.8.1
 **Fecha:** 2026-09-20
 **Estado:** Estable — segunda ronda de integración con Portal-Ars (clases semana a semana + backup en la nube) terminada, probada de punta a punta contra Supabase real y contra la app real, commiteada. Sin `.exe` generado todavía.
 
@@ -9,7 +9,7 @@
 
 ## Lo último que se hizo
 
-### Participación por grupo en Cursos (2026-09-21) — sin commitear, probado solo en BD aislada
+### Participación por grupo en Cursos (2026-09-21) — v1.8.1, commiteado, sin push, probada (25/25 pruebas sobre copia de la BD real + prueba manual del usuario)
 Tabla nueva `participaciones` (eventos +/- por estudiante, con fecha, motivo, período, materia, tema del día). Es solo indicador: no toca `calificaciones`. En `CursoEspacio` → "Clase de hoy": filtro por grupo, botones −/+ por estudiante, "±" (cantidad libre + motivo, p. ej. mala práctica), "+1 al grupo", ↶ deshacer el último de hoy. Pestaña "Estado": columnas Grupo y Participación (acumulado del período) + filtro por grupo. IPC: `add-participaciones`, `deshacer-participacion`, `get-participacion-resumen`, `get-historial-participacion`. Pendiente: probar en la ventana real (reiniciar `npm run dev`), clonar temas de 6to A a 6to B/C (`clonarTemas`, con backup antes), y decidir si Estado muestra desglose por competencia multi.
 
 ### Grupos de trabajo para entrada de notas (2026-09-20) — v1.8.0, commiteado, sin push

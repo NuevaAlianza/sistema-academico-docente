@@ -1,5 +1,14 @@
 # Changelog — Sistema Académico Docente
 
+## [1.8.1] — 2026-09-21
+
+### Added (Nuevo)
+- Participación en Cursos → Clase de hoy: botones − / + por estudiante, "±" (cantidad libre con motivo, p. ej. mala práctica), "+1 al grupo" y deshacer el último movimiento del día. Filtro por grupo (`Todos · G1 … · Sin grupo`). Es solo un indicador: no modifica calificaciones.
+- Cursos → Estado: columnas Grupo y Participación (total neto del período), filtro por grupo, y clic en la participación para ver el historial (fecha, puntos, motivo, tema).
+
+### Internal (Interno)
+- Tabla `participaciones` (eventos por estudiante/curso/materia/período/tema) creada en `crearTablas()`. Métodos `addParticipaciones`, `deshacerParticipacion`, `getParticipacionResumen`, `getHistorialParticipacion`; `getSemaforoEstudiantes` ahora devuelve `grupo_trabajo` y `participacion`. Canales IPC `add-participaciones`, `deshacer-participacion`, `get-participacion-resumen`, `get-historial-participacion`.
+
 ## [1.8.0] — 2026-09-20
 
 ### Added (Nuevo)
