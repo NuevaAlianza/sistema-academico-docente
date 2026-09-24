@@ -57,9 +57,9 @@ export default function Layout({ anio, materia, materias, onCambiarMateria }) {
         <div style={{ flex:1 }} />
 
         {/* SELECTOR DE MATERIA */}
-        {materias && materias.length > 0 && (
+        {anio && (
           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            {materias.map(m => (
+            {(materias||[]).map(m => (
               <button
                 key={m.id}
                 onClick={() => onCambiarMateria && onCambiarMateria(m)}
@@ -74,7 +74,10 @@ export default function Layout({ anio, materia, materias, onCambiarMateria }) {
                 {m.nombre}
               </button>
             ))}
-            {materias.length < 3 && (
+            {(!materias || materias.length === 0) && (
+              <span style={{ fontSize:11, color:'rgba(255,255,255,0.55)', fontStyle:'italic' }}>Sin materia — agrega una →</span>
+            )}
+            {(!materias || materias.length < 3) && (
               <button
                 onClick={() => setModalNueva(true)}
                 title="Agregar materia"

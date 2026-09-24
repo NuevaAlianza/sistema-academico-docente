@@ -138,6 +138,11 @@ class SistemaDB {
     ins.run(aid,'P2','Segundo Periodo', 2, null, null);
     ins.run(aid,'P3','Tercer Periodo',  3, null, null);
     ins.run(aid,'P4','Cuarto Periodo',  4, null, null);
+    // Sin esto el año nuevo queda con 0 materias: el selector del header
+    // y el botón "+" para agregar una se ocultan porque dependen de
+    // materias.length > 0, y el maestro queda sin forma de salir de ahí.
+    const mat = this.db.prepare("INSERT INTO materias (anio_escolar_id,nombre,color,orden) VALUES (?,?,?,?)").run(aid, 'Mi Materia', '#2563A8', 0);
+    this.db.prepare("INSERT OR REPLACE INTO configuracion (clave,valor) VALUES ('materia_activa_id',?)").run(String(mat.lastInsertRowid));
     return res;
   }
 

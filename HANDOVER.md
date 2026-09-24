@@ -1,13 +1,20 @@
 # HANDOVER.md — Estado actual del proyecto
 # Sistema Académico Docente
 
-**Versión:** 1.8.1
-**Fecha:** 2026-09-21
-**Estado:** Estable — segunda ronda de integración con Portal-Ars (clases semana a semana + backup en la nube) terminada, probada de punta a punta contra Supabase real y contra la app real, commiteada. Sin `.exe` generado todavía.
+**Versión:** 1.8.2
+**Fecha:** 2026-09-24
+**Estado:** Estable — fix de "Crear nuevo año escolar" (dejaba el año sin materia, sin forma de recuperarse desde la UI), commiteado. `.exe` generado y en proceso de instalación en la PC de trabajo (la instalada ahí estaba en v1.5.1, muy atrasada — le faltaban v1.6.0 a v1.8.1 completas).
 
 ---
 
 ## Lo último que se hizo
+
+### Fix: año escolar nuevo quedaba sin materia (2026-09-24) — v1.8.2, commiteado
+Reportado por el usuario: en la PC de trabajo, después de crear un año escolar nuevo desde Configuración, no podía editar "Mis Materias" (aparecía vacío) y la función de participación/puntos pedía "selecciona una materia" sin ninguna forma de hacerlo. Reproducido contra una copia de la BD real: `createAnio()` en `database.js` creaba los 4 períodos del año nuevo pero nunca una materia ni actualizaba `materia_activa_id` (a diferencia del seed inicial, que sí lo hace). Con `materias` vacío, el botón "+" del header para agregar una también se ocultaba (`Layout.jsx`, condicionado a `materias.length > 0`) — sin salida desde la UI.
+- Fix: `createAnio()` ahora crea una materia por defecto ("Mi Materia") para el año nuevo y la marca activa, igual que el seed inicial.
+- Fix: el botón "+" del header ya no depende de que exista al menos una materia — se muestra siempre que haya año activo y <3 materias, como red de seguridad si esto vuelve a pasar por otra causa.
+- Verificado con `vite build` + script contra copia aislada de la BD real (simulando exactamente "Crear nuevo año escolar"): antes del fix, año nuevo quedaba con `materias: []`; después, con la materia creada y `materia_activa_id` apuntando a ella.
+- **Hallazgo aparte durante el diagnóstico**: la app instalada en `C:\Users\leone\AppData\Local\Programs\sistema-academico-docente` estaba en **v1.5.1** (build de julio), mientras el código local ya iba en v1.8.1 — le faltaban completas v1.6.0 (animaciones, reportes por lote), v1.7.0 (Portal-Ars, backup en la nube) y v1.8.0 (grupos de trabajo). Confirmado inspeccionando el `package.json` embebido en el `app.asar` instalado. Esto no aplica a la PC de trabajo del usuario (esa ya tenía v1.8.1), pero es la explicación para cualquier otra máquina con el instalador viejo.
 
 ### Participación por grupo en Cursos (2026-09-21) — v1.8.1, commiteado, sin push, probada (25/25 pruebas sobre copia de la BD real + prueba manual del usuario)
 Tabla nueva `participaciones` (eventos +/- por estudiante, con fecha, motivo, período, materia, tema del día). Es solo indicador: no toca `calificaciones`. En `CursoEspacio` → "Clase de hoy": filtro por grupo, botones −/+ por estudiante, "±" (cantidad libre + motivo, p. ej. mala práctica), "+1 al grupo", ↶ deshacer el último de hoy. Pestaña "Estado": columnas Grupo y Participación (acumulado del período) + filtro por grupo. IPC: `add-participaciones`, `deshacer-participacion`, `get-participacion-resumen`, `get-historial-participacion`. Estado: clic en la participación abre el historial (fecha, puntos, motivo, tema). Hecho en la BD de prueba: temas de 6to A clonados a 6to B/C (P1-P4, con backup) y 11 estudiantes de prueba por curso con grupos G1-G3. Pendiente: `git push`, generar `.exe` (parar `npm run dev` antes) y decidir si Estado muestra desglose por competencia multi.

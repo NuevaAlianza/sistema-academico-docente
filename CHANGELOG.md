@@ -1,5 +1,11 @@
 # Changelog — Sistema Académico Docente
 
+## [1.8.2] — 2026-09-24
+
+### Fixed (Corregido)
+- "Crear nuevo año escolar" (Configuración) dejaba el año nuevo sin ninguna materia: `createAnio()` creaba los 4 períodos pero nunca una materia, ni actualizaba `materia_activa_id`. El maestro quedaba sin forma de operar ese año — Configuración → Mis Materias aparecía vacío, y cualquier función que dependa de una materia activa (p. ej. participación) quedaba bloqueada pidiendo "selecciona una materia" sin ninguna forma de hacerlo.
+- Header: el botón "+" para agregar materia dependía de que ya existiera al menos una — si `materias` quedaba vacío (como en el bug anterior), no había ninguna forma de agregar una desde la UI. Ahora se muestra siempre que haya un año activo y menos de 3 materias.
+
 ## [1.8.1] — 2026-09-21
 
 ### Added (Nuevo)
