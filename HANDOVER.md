@@ -2,12 +2,26 @@
 # Sistema Académico Docente
 
 **Versión:** 1.8.2
-**Fecha:** 2026-09-24
-**Estado:** Estable — fix de "Crear nuevo año escolar" (dejaba el año sin materia, sin forma de recuperarse desde la UI), commiteado. `.exe` generado y en proceso de instalación en la PC de trabajo (la instalada ahí estaba en v1.5.1, muy atrasada — le faltaban v1.6.0 a v1.8.1 completas).
+**Fecha:** 2026-10-02
+**Estado:** Participación por fase (Inicio/Desarrollo/Cierre) + vínculo actividad↔tema con participación visible en Calificaciones, commiteado, sin bump de versión (`package.json` sigue en 1.8.2) y sin `.exe`. Fix del modal Clonar de Temario también commiteado. Local va varios commits por delante de `origin/main` (nada pusheado desde v1.7.0).
 
 ---
 
 ## Lo último que se hizo
+
+### Participación por fase + vínculo actividad↔tema (2026-10-02) — commiteado, sin bump, sin `.exe`
+Pedido del usuario: saber en qué momento de la clase se ganaron los puntos de participación y poder verlos al calificar la actividad correspondiente, sin que se sumen a la nota.
+- **Fase**: columna `participaciones.fase` (`'I'|'D'|'C'|NULL`, vía `migrarTablas()`). En CursoEspacio → popup "±", chips opcionales Inicio/Desarrollo/Cierre, solo si el tema del día tiene plan de clase (`meta_json.actividades`). Los botones rápidos −1/+1/+1 grupo no piden fase. El historial muestra la fase.
+- **Vínculo actividad↔tema**: tabla nueva `actividad_temas (actividad_id, tema_id)` con FK cascade + borrado explícito en `deleteActividad`/`deleteTema`. `setActividadTemas` solo acepta temas del mismo curso+período+materia. `createActividad`/`updateActividad` solo tocan el vínculo si reciben `temaIds` (otros llamadores no lo pisan). En el modal de actividad de Calificaciones: checkboxes "Temas que evalúa" (opcional).
+- **Vista al calificar**: `getParticipacionActividad(actId)` → por estudiante, suma de puntos con `tema_id` en los temas vinculados + total del período. Columna "✋ Particip." al final (simple y multi, sin mover las 4 competencias): vinculada → `actividad / período` (0 si no hubo puntos); sin vínculo → total del período con aviso. Clic abre el historial con los movimientos de esos temas resaltados. Nunca toca `calificaciones`.
+- **Decisión de diseño (confirmada con el usuario)**: se vincula por tema, no por rango de fechas entre actividades — las fechas de actividad suelen quedar vacías y cada punto ya se guarda con el `tema_id` del día. El vínculo se hace al crear/editar la actividad, no al crear el tema.
+- Componente compartido nuevo `src/components/HistorialParticipacion.jsx` (usado por CursoEspacio y Calificaciones; exporta `FASES`, `fmtPts`, `colorPts`).
+- **Verificado**: backup `backup_pre_migracion_nombres_20261002_182158.db` antes de empezar; 24/24 pruebas del backend contra copia de la BD real (fase, validación de temas ajenos, suma igual a SQL independiente, limpieza al borrar, `initialize()` repetido); `vite build`; migración aplicada a la BD real al abrir `npm run dev` con las 8 participaciones previas intactas; revisado por el usuario en la ventana real (6to A, actividad 1 vinculada al tema 1 → `0 / +1`, actividades sin vínculo → total del período).
+- **Dato de la BD de esta PC**: en 6to A P1 el tema 6 (La Pascua) está `pendiente` mientras el 7 está `realizado`, por eso "Clase de hoy" sigue en La Pascua y todos los puntos están en ese tema.
+- Pendiente: decidir versión (¿1.9.0? es feature nueva), `.exe` (parar `npm run dev` antes), probar en la PC de trabajo.
+
+### Fix: modal Clonar en Temario (2026-10-02) — commit `c4393fc`
+Con muchos cursos, la lista de destino empujaba Cancelar/Clonar fuera de la pantalla. Mismo patrón que el modal Archivos (`maxHeight: 80vh`, lista con scroll). Solo estilos.
 
 ### Fix: año escolar nuevo quedaba sin materia (2026-09-24) — v1.8.2, commiteado
 Reportado por el usuario: en la PC de trabajo, después de crear un año escolar nuevo desde Configuración, no podía editar "Mis Materias" (aparecía vacío) y la función de participación/puntos pedía "selecciona una materia" sin ninguna forma de hacerlo. Reproducido contra una copia de la BD real: `createAnio()` en `database.js` creaba los 4 períodos del año nuevo pero nunca una materia ni actualizaba `materia_activa_id` (a diferencia del seed inicial, que sí lo hace). Con `materias` vacío, el botón "+" del header para agregar una también se ocultaba (`Layout.jsx`, condicionado a `materias.length > 0`) — sin salida desde la UI.
