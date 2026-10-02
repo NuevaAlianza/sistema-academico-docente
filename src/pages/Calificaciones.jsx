@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useModalTransition } from '../hooks/useModalTransition'
+import HistorialParticipacion, { fmtPts, colorPts } from '../components/HistorialParticipacion'
 
 const COMPETENCIAS = [
   { key:'Comunicativa',       label:'Comunicativa',       color:'#2563A8', bg:'#D6E4F7', icono:'💬' },
@@ -16,7 +17,7 @@ const COMP_INFO = Object.fromEntries(COMPETENCIAS.map(c => [c.key, c]))
 const TIPOS = ['Tarea','Exposicion','Proyecto','Examen','Participacion','Cuaderno']
 const TIPO_ICONO = { Tarea:'📝', Exposicion:'🎤', Proyecto:'🔬', Examen:'📄', Participacion:'✋', Cuaderno:'📓' }
 const COLORES_PER = ['#2563A8','#00695C','#5C2D91','#1A6B3A']
-const VACIO = { nombre:'', tipo:'Tarea', competencia:'Comunicativa', fecha:'', peso:'10', modo:'simple', competencias_multi:[] }
+const VACIO = { nombre:'', tipo:'Tarea', competencia:'Comunicativa', fecha:'', peso:'10', modo:'simple', competencias_multi:[], temaIds:[] }
 
 export default function Calificaciones({ anio, materia }) {
   const location = useLocation()
@@ -48,6 +49,9 @@ export default function Calificaciones({ anio, materia }) {
   const [tabResumen,      setTabResumen]      = useState('simple')
   const [resumenMultiData,setResumenMultiData]= useState({})
   const [cargandoMultiTab,setCargandoMultiTab]= useState(false)
+  const [temasPer,        setTemasPer]        = useState([])
+  const [partAct,         setPartAct]         = useState(null) // { vinculada, temas, porEstudiante }
+  const [histPart,        setHistPart]        = useState(null) // { est, items }
   const modalActT       = useModalTransition(modalAct)
   const modalDuplicarT  = useModalTransition(modalDuplicar)
   const confirmT        = useModalTransition(confirm)
@@ -141,6 +145,16 @@ useEffect(() => {
     return () => { activo = false }
   }, [tabResumen, vista, actividades, estudiantes])
 
+  useEffect(() => {
+    if (!modalAct || !cursoSel || !perSel) return
+    window.api.invoke('get-temas', cursoSel.id, perSel.id, materiaId).then(t => setTemasPer(Array.isArray(t) ? t : []))
+  }, [modalAct, cursoSel, perSel])
+
+  async function verHistorialPart(est) {
+    const items = await window.api.invoke('get-historial-participacion', est.id, cursoSel.id, perSel.id, materiaId)
+    setHistPart({ est, items: Array.isArray(items) ? items : [] })
+  }
+
   async function cargarHistorial() {
     setCargandoHist(true)
     try {
@@ -166,6 +180,8 @@ useEffect(() => {
   async function abrirNotas(act) {
     setActSel(act)
     setDistribuciones({})
+    setPartAct(null)
+    window.api.invoke('get-participacion-actividad', act.id).then(setPartAct).catch(() => {})
     const c = await window.api.invoke('get-calificaciones', act.id)
     const mapa = {}
     c.forEach(x => { mapa[x.estudiante_id] = x.nota })
@@ -233,14 +249,16 @@ useEffect(() => {
     toast2(`✓ Guardado: ${resumenDist}  →  nota ${notaGlobal}`)
   }
 
-  function abrirEditar(act, e) {
+  async function abrirEditar(act, e) {
     e.stopPropagation()
+    const temaIds = await window.api.invoke('get-actividad-temas', act.id)
     setEditandoId(act.id)
     setForm({
       nombre: act.nombre, tipo: act.tipo, competencia: act.competencia,
       fecha: act.fecha || '', peso: String(act.peso),
       modo: act.modo || 'simple',
       competencias_multi: act.competencias_multi ? JSON.parse(act.competencias_multi) : [],
+      temaIds: Array.isArray(temaIds) ? temaIds : [],
     })
     setModalAct(true)
   }
@@ -264,6 +282,7 @@ useEffect(() => {
       fecha: form.fecha || null, peso: pesoNum,
       modo: form.modo,
       competencias_multi: form.modo === 'multi' ? form.competencias_multi : null,
+      temaIds: form.temaIds,
     }
     if (editandoId) {
       // Aviso si cambian competencias de actividad multi que ya tiene notas
@@ -1268,6 +1287,19 @@ useEffect(() => {
           const califsVis = !filtroActivo ? califs
             : grupoFiltro === 'sin' ? califs.filter(e => e.grupo_trabajo == null)
             : califs.filter(e => e.grupo_trabajo === grupoFiltro)
+          const celdaPart = est => {
+            if (!partAct) return <div />
+            const v = partAct.porEstudiante[est.id] || { actividad:0, periodo:0 }
+            const principal = partAct.vinculada ? v.actividad : v.periodo
+            return (
+              <button onClick={() => verHistorialPart({ ...est, participacion: v.periodo })}
+                title={partAct.vinculada ? 'Esta actividad / total del período — clic para ver el historial' : 'Total del período (sin temas vinculados) — clic para ver el historial'}
+                style={{ background:'none', border:'none', padding:0, cursor:'pointer', textAlign:'center', fontSize:13, fontWeight:700, color:colorPts(principal) }}>
+                {principal !== 0 ? fmtPts(principal) : (partAct.vinculada ? '0' : '—')}
+                {partAct.vinculada && <span style={{ fontSize:11, fontWeight:400, color:'#AAB4C4' }}> / {fmtPts(v.periodo)}</span>}
+              </button>
+            )
+          }
           const chipGrupo = (key, label, lista) => {
             const on = key === null ? !filtroActivo : filtroActivo && grupoFiltro === key
             const hechos = lista.filter(e => e.nota !== '').length
@@ -1312,11 +1344,21 @@ useEffect(() => {
                 </div>
               )}
 
+              {partAct && (
+                <div style={{ marginBottom:12, padding:'8px 14px', borderRadius:10, fontSize:12,
+                  background: partAct.vinculada ? '#F0FDF4' : '#F8FAFD', border:'1px solid '+(partAct.vinculada ? '#BBE5C8' : '#E8EDF5'), color:'#555' }}>
+                  ✋ <strong>Participación</strong> (solo referencia, no cambia la nota) —{' '}
+                  {partAct.vinculada
+                    ? <>de esta actividad: {partAct.temas.map(t => t.titulo).join(' · ')}</>
+                    : <span style={{ color:'#888' }}>sin temas vinculados, se muestra el total del período. Vincúlalos con ✏️ en la actividad.</span>}
+                </div>
+              )}
+
               {/* ── MODO SIMPLE ── */}
               {!esMulti && (
                 <div style={{ background:'#fff', borderRadius:12, border:'1px solid #DDE3ED', boxShadow:'0 2px 8px #0001', overflow:'hidden' }}>
-                  <div style={{ display:'grid', gridTemplateColumns:'50px 1fr 150px', background:'#1B3A6B', padding:'10px 20px', gap:10 }}>
-                    {['#','Estudiante','Nota (0-100)'].map(h => (
+                  <div style={{ display:'grid', gridTemplateColumns:'50px 1fr 150px 110px', background:'#1B3A6B', padding:'10px 20px', gap:10 }}>
+                    {['#','Estudiante','Nota (0-100)','✋ Particip.'].map(h => (
                       <div key={h} style={{ color:'#9BBFED', fontSize:11, fontWeight:700 }}>{h}</div>
                     ))}
                   </div>
@@ -1326,7 +1368,7 @@ useEffect(() => {
                       const n = e.nota===''?null:Number(e.nota)
                       const col = colorNota(n)
                       return (
-                        <div key={e.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 150px', padding:'10px 20px', gap:10, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
+                        <div key={e.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 150px 110px', padding:'10px 20px', gap:10, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
                           <div style={{ fontSize:13, fontWeight:700, color:'#7A8FA8' }}>{String(e.numero_lista).padStart(2,'0')}</div>
                           <div style={{ fontSize:13, fontWeight:600, color:'#1B3A6B' }}>{e.nombre_completo}</div>
                           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -1337,6 +1379,7 @@ useEffect(() => {
                               onBlur={ev => ev.target.style.borderColor='#DDE3ED'} />
                             {n!==null && <div style={{ width:10, height:10, borderRadius:'50%', background:col }} />}
                           </div>
+                          {celdaPart(e)}
                         </div>
                       )
                     })
@@ -1370,7 +1413,7 @@ useEffect(() => {
                       🔀 Distribución por competencia (máx <strong>{techo}</strong> pts por comp) — La nota global se calcula automáticamente como suma.
                     </div>
                     {/* Cabecera tabla — 4 cols fijas en orden canónico */}
-                    <div style={{ display:'grid', gridTemplateColumns:'50px 1fr 110px 110px 110px 110px 100px', background:'#1B3A6B', padding:'10px 16px', gap:8, alignItems:'center' }}>
+                    <div style={{ display:'grid', gridTemplateColumns:'50px 1fr 110px 110px 110px 110px 100px 90px', background:'#1B3A6B', padding:'10px 16px', gap:8, alignItems:'center' }}>
                       {['#','Estudiante'].map(h => <div key={h} style={{ color:'#9BBFED', fontSize:11, fontWeight:700 }}>{h}</div>)}
                       {COMPETENCIAS.map(c => {
                         const activa = compsMulti.includes(c.key)
@@ -1386,6 +1429,7 @@ useEffect(() => {
                         )
                       })}
                       <div style={{ color:'#FFD700', fontSize:10, fontWeight:700, textAlign:'center' }}>NOTA GLOBAL</div>
+                      <div style={{ color:'#9BBFED', fontSize:10, fontWeight:700, textAlign:'center' }}>✋ PARTICIP.</div>
                     </div>
                     {califs.length === 0
                       ? <div style={{ padding:30, textAlign:'center', color:'#888', fontSize:13 }}>Agrega estudiantes al curso primero</div>
@@ -1396,7 +1440,7 @@ useEffect(() => {
                         const hayExceso  = compsMulti.some(c => (dist[c]||0) > techo + 0.01)
                         const colNota    = hayExceso ? '#B71C1C' : colorNota(guardado ? notaGlobal : null)
                         return (
-                          <div key={e.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 110px 110px 110px 110px 100px', padding:'8px 16px', gap:8, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
+                          <div key={e.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 110px 110px 110px 110px 100px 90px', padding:'8px 16px', gap:8, alignItems:'center', borderTop:idx>0?'1px solid #F0F4FA':'none', background:idx%2===0?'#fff':'#FAFBFD' }}>
                             <div style={{ fontSize:12, fontWeight:700, color:'#7A8FA8' }}>{String(e.numero_lista).padStart(2,'0')}</div>
                             <div style={{ fontSize:12, fontWeight:600, color:'#1B3A6B', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{e.nombre_completo}</div>
                             {/* Inputs por competencia — 4 cols fijas en orden canónico */}
@@ -1426,6 +1470,7 @@ useEffect(() => {
                             <div style={{ textAlign:'center', fontSize:15, fontWeight:900, color: guardado ? colNota : '#BBBBBB' }}>
                               {hayExceso ? <span style={{ fontSize:11, color:'#B71C1C' }}>✗ excede</span> : notaGlobal}
                             </div>
+                            {celdaPart(e)}
                           </div>
                         )
                       })
@@ -1550,6 +1595,28 @@ useEffect(() => {
                 </div>
               )}
 
+              {/* Temas que evalúa: solo para ver la participación de esos temas al calificar */}
+              <div style={{ marginBottom:14 }}>
+                <label style={{ display:'block', fontSize:12, fontWeight:600, color:'#444', marginBottom:6 }}>
+                  Temas que evalúa <span style={{ fontWeight:400, color:'#888' }}>(opcional — para ver la participación de esos temas)</span>
+                </label>
+                {temasPer.length === 0
+                  ? <div style={{ fontSize:11, color:'#AAA', fontStyle:'italic' }}>No hay temas en este período (Temario).</div>
+                  : <div style={{ maxHeight:150, overflowY:'auto', border:'1px solid #E8EDF5', borderRadius:8 }}>
+                      {temasPer.map((t, i) => {
+                        const sel = form.temaIds.includes(t.id)
+                        return (
+                          <label key={t.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', fontSize:12, cursor:'pointer', borderTop:i>0?'1px solid #F0F4FA':'none', background: sel ? '#F0F7FF' : '#fff' }}>
+                            <input type="checkbox" checked={sel}
+                              onChange={() => setForm(p => ({ ...p, temaIds: sel ? p.temaIds.filter(x => x !== t.id) : [...p.temaIds, t.id] }))} />
+                            <span style={{ color:'#1B3A6B', flex:1 }}>{t.titulo}</span>
+                            {t.estado === 'realizado' && <span style={{ fontSize:10, color:'#1A6B3A' }}>✓ realizado</span>}
+                          </label>
+                        )
+                      })}
+                    </div>}
+              </div>
+
               {/* Tipo / Peso / Fecha */}
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:8 }}>
                 <div>
@@ -1589,6 +1656,13 @@ useEffect(() => {
           </div>
         )
       })()}
+
+      {histPart && (
+        <HistorialParticipacion nombre={histPart.est.nombre_completo} subtitulo={perSel?.nombre}
+          total={histPart.est.participacion} items={histPart.items}
+          resaltarTemaIds={partAct?.vinculada ? partAct.temas.map(t => t.id) : []}
+          onClose={() => setHistPart(null)} />
+      )}
 
       {/* MODAL DUPLICAR */}
       {modalDuplicarT && (

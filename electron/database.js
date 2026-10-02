@@ -48,6 +48,7 @@ class SistemaDB {
       { tabla: 'curso_nota_rapida',    col: 'materia_id',          def: 'INTEGER' },
       { tabla: 'curso_anotaciones',    col: 'materia_id',          def: 'INTEGER' },
       { tabla: 'estudiantes',          col: 'grupo_trabajo',       def: 'INTEGER' },
+      { tabla: 'participaciones',      col: 'fase',                def: 'TEXT' },
     ]
     for (const { tabla, col, def } of columnas) {
       try {
@@ -80,6 +81,8 @@ class SistemaDB {
     }
 
     try { this.db.prepare('ALTER TABLE temas ADD COLUMN meta_json TEXT').run() } catch (_) {}
+
+    this.db.exec("CREATE TABLE IF NOT EXISTS actividad_temas (actividad_id INTEGER NOT NULL, tema_id INTEGER NOT NULL, PRIMARY KEY (actividad_id, tema_id), FOREIGN KEY (actividad_id) REFERENCES actividades(id) ON DELETE CASCADE, FOREIGN KEY (tema_id) REFERENCES temas(id) ON DELETE CASCADE)")
   }
 
   crearTablas() {
@@ -208,6 +211,7 @@ class SistemaDB {
   }
   deleteTema(id) {
     this.db.prepare("DELETE FROM tema_archivos WHERE tema_id=?").run(id);
+    this.db.prepare("DELETE FROM actividad_temas WHERE tema_id=?").run(id);
     return this.db.prepare("DELETE FROM temas WHERE id=?").run(id);
   }
   reordenarTemas(temaIds) {
@@ -476,8 +480,10 @@ deleteEstudiante(id) {
   createActividad(d) {
     const modo = d.modo || 'simple';
     const compsMulti = (modo === 'multi' && d.competencias_multi) ? JSON.stringify(d.competencias_multi) : null;
-    return this.db.prepare("INSERT INTO actividades (materia_id,curso_id,periodo_id,nombre,tipo,competencia,fecha,peso,descripcion,modo,competencias_multi) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+    const r = this.db.prepare("INSERT INTO actividades (materia_id,curso_id,periodo_id,nombre,tipo,competencia,fecha,peso,descripcion,modo,competencias_multi) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
       .run(d.materiaId||null, d.cursoId, d.periodoId, d.nombre, d.tipo||'tarea', d.competencia||'Comunicativa', d.fecha||null, d.peso||1, d.descripcion||'', modo, compsMulti);
+    if (Array.isArray(d.temaIds)) this.setActividadTemas(r.lastInsertRowid, d.temaIds);
+    return r;
   }
   updateActividad(id, d) {
     const modo      = d.modo || 'simple';
@@ -502,11 +508,52 @@ deleteEstudiante(id) {
       }
     }
 
-    return this.db.prepare(
+    const r = this.db.prepare(
       "UPDATE actividades SET nombre=?,tipo=?,competencia=?,fecha=?,peso=?,modo=?,competencias_multi=? WHERE id=?"
     ).run(d.nombre, d.tipo||'tarea', d.competencia||'Comunicativa', d.fecha||null, d.peso||1, modo, compsJson, id);
+    if (Array.isArray(d.temaIds)) this.setActividadTemas(id, d.temaIds);
+    return r;
   }
+
+  // Temas que evalúa una actividad. Solo se aceptan temas del mismo curso/período/materia.
+  getActividadTemas(actividadId) {
+    return this.db.prepare("SELECT tema_id FROM actividad_temas WHERE actividad_id=?").all(actividadId).map(r => r.tema_id);
+  }
+  setActividadTemas(actividadId, temaIds) {
+    const act = this.db.prepare("SELECT curso_id, periodo_id, materia_id FROM actividades WHERE id=?").get(actividadId);
+    if (!act) return { error: 'Actividad no existe' };
+    const ids = [...new Set((temaIds || []).map(Number))].filter(n => Number.isInteger(n) && n > 0);
+    const valido = this.db.prepare("SELECT 1 FROM temas WHERE id=? AND curso_id=? AND periodo_id=? AND materia_id IS ?");
+    const ins = this.db.prepare("INSERT OR IGNORE INTO actividad_temas (actividad_id, tema_id) VALUES (?,?)");
+    let vinculados = 0;
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM actividad_temas WHERE actividad_id=?").run(actividadId);
+      for (const t of ids) {
+        if (!valido.get(t, act.curso_id, act.periodo_id, act.materia_id)) continue;
+        ins.run(actividadId, t);
+        vinculados++;
+      }
+    })();
+    return { vinculados };
+  }
+
+  // Participación vista desde una actividad: suma de los temas vinculados + total del período.
+  // Nunca toca calificaciones. Sin temas vinculados → vinculada:false y solo el total del período.
+  getParticipacionActividad(actividadId) {
+    const act = this.db.prepare("SELECT curso_id, periodo_id, materia_id FROM actividades WHERE id=?").get(actividadId);
+    if (!act) return { vinculada: false, temas: [], porEstudiante: {} };
+    const temas = this.db.prepare("SELECT t.id, t.titulo FROM actividad_temas at JOIN temas t ON t.id=at.tema_id WHERE at.actividad_id=? ORDER BY t.orden, t.id").all(actividadId);
+    const rows = this.db.prepare(`SELECT p.estudiante_id, SUM(p.puntos) AS periodo,
+        SUM(CASE WHEN p.tema_id IN (SELECT tema_id FROM actividad_temas WHERE actividad_id=?) THEN p.puntos ELSE 0 END) AS actividad
+      FROM participaciones p WHERE p.curso_id=? AND p.periodo_id=? AND p.materia_id IS ? GROUP BY p.estudiante_id`)
+      .all(actividadId, act.curso_id, act.periodo_id, act.materia_id);
+    const porEstudiante = {};
+    for (const r of rows) porEstudiante[r.estudiante_id] = { actividad: r.actividad, periodo: r.periodo };
+    return { vinculada: temas.length > 0, temas, porEstudiante };
+  }
+
   deleteActividad(id) {
+    this.db.prepare("DELETE FROM actividad_temas WHERE actividad_id=?").run(id);
     this.db.prepare("DELETE FROM calificaciones WHERE actividad_id=?").run(id);
     return this.db.prepare("DELETE FROM actividades WHERE id=?").run(id);
   }
@@ -824,20 +871,21 @@ deleteEstudiante(id) {
   }
 
   // Participación: eventos +/- por estudiante. Es solo un indicador, no toca calificaciones.
-  // d = { cursoId, periodoId, materiaId, temaId, fecha, puntos, motivo, estudianteIds }
+  // d = { cursoId, periodoId, materiaId, temaId, fecha, puntos, motivo, fase, estudianteIds }
   addParticipaciones(d) {
     const puntos = Number(d && d.puntos);
     if (!Number.isInteger(puntos) || puntos === 0 || Math.abs(puntos) > 100) return { error: 'Puntos inválidos' };
     if (!d.cursoId || !d.periodoId || !d.fecha) return { error: 'Faltan curso, período o fecha' };
     const ids = [...new Set((d.estudianteIds || []).map(Number))].filter(n => Number.isInteger(n) && n > 0);
     if (ids.length === 0) return { error: 'Sin estudiantes' };
+    const fase = ['I', 'D', 'C'].includes(d.fase) ? d.fase : null;
     const valido = this.db.prepare("SELECT 1 FROM estudiantes WHERE id=? AND curso_id=? AND estado='activo'");
-    const ins = this.db.prepare("INSERT INTO participaciones (estudiante_id,curso_id,materia_id,periodo_id,tema_id,fecha,puntos,motivo) VALUES (?,?,?,?,?,?,?,?)");
+    const ins = this.db.prepare("INSERT INTO participaciones (estudiante_id,curso_id,materia_id,periodo_id,tema_id,fecha,puntos,motivo,fase) VALUES (?,?,?,?,?,?,?,?,?)");
     let registrados = 0;
     this.db.transaction(() => {
       for (const id of ids) {
         if (!valido.get(id, d.cursoId)) continue;
-        ins.run(id, d.cursoId, d.materiaId || null, d.periodoId, d.temaId || null, d.fecha, puntos, String(d.motivo || '').trim().slice(0, 200));
+        ins.run(id, d.cursoId, d.materiaId || null, d.periodoId, d.temaId || null, d.fecha, puntos, String(d.motivo || '').trim().slice(0, 200), fase);
         registrados++;
       }
     })();
@@ -861,7 +909,7 @@ deleteEstudiante(id) {
   }
 
   getHistorialParticipacion(estudianteId, cursoId, periodoId, materiaId) {
-    return this.db.prepare("SELECT p.fecha, p.puntos, p.motivo, t.titulo AS tema FROM participaciones p LEFT JOIN temas t ON t.id=p.tema_id WHERE p.estudiante_id=? AND p.curso_id=? AND p.periodo_id=? AND p.materia_id IS ? ORDER BY p.fecha DESC, p.id DESC").all(estudianteId, cursoId, periodoId, materiaId || null);
+    return this.db.prepare("SELECT p.fecha, p.puntos, p.motivo, p.fase, p.tema_id, t.titulo AS tema FROM participaciones p LEFT JOIN temas t ON t.id=p.tema_id WHERE p.estudiante_id=? AND p.curso_id=? AND p.periodo_id=? AND p.materia_id IS ? ORDER BY p.fecha DESC, p.id DESC").all(estudianteId, cursoId, periodoId, materiaId || null);
   }
 
   getEstudiantesSinNota(cursoId, periodoId, materiaId) {

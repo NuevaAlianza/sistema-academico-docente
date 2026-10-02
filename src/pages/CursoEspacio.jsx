@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useModalTransition } from '../hooks/useModalTransition'
+import HistorialParticipacion, { FASES, fmtPts, colorPts } from '../components/HistorialParticipacion'
 
 // ── Semáforo ──────────────────────────────────────────────────
 const SEM = {
@@ -79,6 +80,7 @@ export default function CursoEspacio({ anio, materia }) {
   const [popupPunt,    setPopupPunt]    = useState(null)     // { ids, titulo }
   const [puntosTxt,    setPuntosTxt]    = useState('')
   const [motivoTxt,    setMotivoTxt]    = useState('')
+  const [faseSel,      setFaseSel]      = useState(null)     // 'I' | 'D' | 'C' | null
   const [histPunt,     setHistPunt]     = useState(null)     // { est, items }
 
   // ── Bloque: Semáforo ──────────────────────────────────────
@@ -146,11 +148,11 @@ export default function CursoEspacio({ anio, materia }) {
     setPartic(r || {})
   }
 
-  async function sumarPuntos(ids, puntos, motivo = '') {
+  async function sumarPuntos(ids, puntos, motivo = '', fase = null) {
     if (!perSel?.id || !materiaId) { showToast('Selecciona una materia y período'); return }
     const r = await window.api.invoke('add-participaciones', {
       cursoId: id, periodoId: perSel.id, materiaId, temaId: temaDia?.id || null,
-      fecha: hoy, puntos, motivo, estudianteIds: ids,
+      fecha: hoy, puntos, motivo, fase, estudianteIds: ids,
     })
     if (r?.error) { showToast('⚠️ ' + r.error); return }
     await cargarParticipacion()
@@ -166,7 +168,7 @@ export default function CursoEspacio({ anio, materia }) {
   async function confirmarPuntos() {
     const n = parseInt(puntosTxt, 10)
     if (!Number.isInteger(n) || n === 0 || !popupPunt) return
-    await sumarPuntos(popupPunt.ids, n, motivoTxt)
+    await sumarPuntos(popupPunt.ids, n, motivoTxt, temaTienePlan ? faseSel : null)
     showToast(`${n > 0 ? '+' : ''}${n} → ${popupPunt.titulo}`)
     setPopupPunt(null)
   }
@@ -176,7 +178,7 @@ export default function CursoEspacio({ anio, materia }) {
     setHistPunt({ est, items: Array.isArray(items) ? items : [] })
   }
 
-  function abrirPuntos(ids, titulo) { setPopupPunt({ ids, titulo }); setPuntosTxt(''); setMotivoTxt('') }
+  function abrirPuntos(ids, titulo) { setPopupPunt({ ids, titulo }); setPuntosTxt(''); setMotivoTxt(''); setFaseSel(null) }
 
   async function cargarTemaDia() {
     if (!perSel?.id || !materiaId) return
@@ -312,8 +314,13 @@ export default function CursoEspacio({ anio, materia }) {
   const haySinGrupo= estudiantes.some(e => e.grupo_trabajo == null)
   const visibles    = estudiantes.filter(e =>
     grupoSel === 'todos' ? true : grupoSel === 'sin' ? e.grupo_trabajo == null : e.grupo_trabajo === grupoSel)
-  const fmtPts = n => (n > 0 ? '+' : '') + n
-  const colorPts = n => n > 0 ? '#065F46' : n < 0 ? '#9B1C1C' : '#AAB4C4'
+  const temaTienePlan = (() => {
+    if (!temaDia?.meta_json) return false
+    try {
+      const plan = typeof temaDia.meta_json === 'string' ? JSON.parse(temaDia.meta_json) : temaDia.meta_json
+      return Array.isArray(plan?.actividades) && plan.actividades.length > 0
+    } catch { return false }
+  })()
 
   // ─────────────────────────────────────────────────────────
   // RENDER
@@ -813,6 +820,21 @@ export default function CursoEspacio({ anio, materia }) {
               <input type="number" value={puntosTxt} onChange={e => setPuntosTxt(e.target.value)} placeholder="otro"
                 style={{ width:70, border:'1.5px solid #DDE3ED', borderRadius:8, padding:'6px 8px', fontSize:13, outline:'none' }} />
             </div>
+            {temaTienePlan && (
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:12 }}>
+                <span style={{ fontSize:11, fontWeight:700, color:'#7A8FA8', marginRight:2 }}>MOMENTO</span>
+                {FASES.map(f => {
+                  const on = faseSel === f.key
+                  return (
+                    <button key={f.key} onClick={() => setFaseSel(on ? null : f.key)} style={{
+                      padding:'5px 12px', borderRadius:16, fontSize:12, fontWeight:700, cursor:'pointer',
+                      border:'1.5px solid '+f.fg+(on?'':'40'), background: on ? f.fg : f.bg, color: on ? '#fff' : f.fg,
+                    }}>{f.label}</button>
+                  )
+                })}
+                <span style={{ fontSize:11, color:'#AAB4C4' }}>(opcional)</span>
+              </div>
+            )}
             <input value={motivoTxt} onChange={e => setMotivoTxt(e.target.value)} placeholder="Motivo (opcional): ej. celular en clase, conversó..." maxLength={200}
               onKeyDown={e => { if (e.key==='Enter') confirmarPuntos() }}
               style={{ width:'100%', border:'1.5px solid #DDE3ED', borderRadius:8, padding:'10px 12px', fontSize:13, outline:'none', boxSizing:'border-box', marginBottom:14 }} />
@@ -827,32 +849,8 @@ export default function CursoEspacio({ anio, materia }) {
 
       {/* ── POPUP HISTORIAL DE PARTICIPACIÓN ──────────────── */}
       {histPunt && (
-        <div className="modal-backdrop" style={{ position:'fixed', inset:0, background:'#0004', display:'flex', alignItems:'center', justifyContent:'center', zIndex:900 }}
-          onClick={e => { if (e.target===e.currentTarget) setHistPunt(null) }}>
-          <div className="modal-content" style={{ background:'#fff', borderRadius:14, padding:24, width:460, maxHeight:'80vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
-            <div style={{ fontWeight:700, color:'#1B3A6B', fontSize:15, marginBottom:2 }}>Participación: {histPunt.est.nombre_completo}</div>
-            <div style={{ fontSize:12, color:'#888', marginBottom:12 }}>
-              {perSel?.nombre} · {histPunt.items.length} movimiento(s) · total <strong style={{ color:colorPts(histPunt.est.participacion) }}>{fmtPts(histPunt.est.participacion)}</strong>
-            </div>
-            <div style={{ overflowY:'auto', border:'1px solid #E8EDF5', borderRadius:8 }}>
-              {histPunt.items.length === 0
-                ? <div style={{ padding:20, textAlign:'center', color:'#AAA', fontStyle:'italic', fontSize:13 }}>Sin movimientos en este período.</div>
-                : histPunt.items.map((h, i) => (
-                  <div key={i} style={{ display:'grid', gridTemplateColumns:'84px 44px 1fr', gap:8, padding:'8px 12px', alignItems:'baseline', borderBottom:i<histPunt.items.length-1?'1px solid #F0F4FA':'none', background:i%2===0?'#fff':'#FAFBFD' }}>
-                    <span style={{ fontSize:12, color:'#888' }}>{h.fecha}</span>
-                    <span style={{ fontSize:13, fontWeight:700, color:colorPts(h.puntos) }}>{fmtPts(h.puntos)}</span>
-                    <span style={{ fontSize:12, color:'#555' }}>
-                      {h.motivo || <span style={{ color:'#CCC' }}>sin motivo</span>}
-                      {h.tema && <span style={{ display:'block', fontSize:11, color:'#AAB4C4' }}>Tema: {h.tema}</span>}
-                    </span>
-                  </div>
-                ))}
-            </div>
-            <div style={{ display:'flex', justifyContent:'flex-end', marginTop:14 }}>
-              <button onClick={() => setHistPunt(null)} style={{ padding:'8px 18px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cerrar</button>
-            </div>
-          </div>
-        </div>
+        <HistorialParticipacion nombre={histPunt.est.nombre_completo} subtitulo={perSel?.nombre}
+          total={histPunt.est.participacion} items={histPunt.items} onClose={() => setHistPunt(null)} />
       )}
 
       {/* ── TOAST ─────────────────────────────────────────── */}
