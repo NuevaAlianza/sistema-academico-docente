@@ -307,8 +307,27 @@ class SistemaDB {
   }
 
   getEstudiantes(cursoId) { return this.db.prepare("SELECT * FROM estudiantes WHERE curso_id=? AND estado='activo' ORDER BY numero_lista,nombre_completo").all(cursoId); }
-  createEstudiante(d) { return this.db.prepare("INSERT INTO estudiantes (curso_id,codigo_unico,numero_lista,nombre_completo) VALUES (?,?,?,?)").run(d.cursoId, d.codigo||'', d.numero||0, d.nombre); }
-  updateEstudiante(id, d) { return this.db.prepare("UPDATE estudiantes SET nombre_completo=?,codigo_unico=?,numero_lista=?,estado=? WHERE id=?").run(d.nombre, d.codigo||'', d.numero||0, d.estado||'activo', id); }
+  // El número de lista empareja al estudiante en el padrón y en Portal-Ars: no puede repetirse
+  // entre activos del mismo curso. 0 = sin número, no se valida.
+  numeroListaOcupado(cursoId, numero, excluirId) {
+    const n = Number(numero) || 0;
+    if (n <= 0) return null;
+    return this.db.prepare("SELECT id, nombre_completo FROM estudiantes WHERE curso_id=? AND numero_lista=? AND estado='activo' AND id<>?").get(cursoId, n, excluirId || 0) || null;
+  }
+  createEstudiante(d) {
+    const ocupado = this.numeroListaOcupado(d.cursoId, d.numero, 0);
+    if (ocupado) return { error: `El número ${d.numero} ya lo tiene ${ocupado.nombre_completo}` };
+    return this.db.prepare("INSERT INTO estudiantes (curso_id,codigo_unico,numero_lista,nombre_completo) VALUES (?,?,?,?)").run(d.cursoId, d.codigo||'', d.numero||0, d.nombre);
+  }
+  updateEstudiante(id, d) {
+    const estado = d.estado || 'activo';
+    if (estado === 'activo') {
+      const est = this.db.prepare("SELECT curso_id FROM estudiantes WHERE id=?").get(id);
+      const ocupado = est && this.numeroListaOcupado(est.curso_id, d.numero, id);
+      if (ocupado) return { error: `El número ${d.numero} ya lo tiene ${ocupado.nombre_completo}` };
+    }
+    return this.db.prepare("UPDATE estudiantes SET nombre_completo=?,codigo_unico=?,numero_lista=?,estado=? WHERE id=?").run(d.nombre, d.codigo||'', d.numero||0, estado, id);
+  }
   // Grupos de trabajo del cuaderno (fijos todo el año). NULL = sin grupo.
   // Solo afecta cómo se filtra la vista de notas; no toca calificaciones.
   setGrupoEstudiante(estudianteId, grupo) {
@@ -876,6 +895,11 @@ deleteEstudiante(id) {
     const puntos = Number(d && d.puntos);
     if (!Number.isInteger(puntos) || puntos === 0 || Math.abs(puntos) > 100) return { error: 'Puntos inválidos' };
     if (!d.cursoId || !d.periodoId || !d.fecha) return { error: 'Faltan curso, período o fecha' };
+    // Cada punto debe quedar en un tema abierto: así el conteo por tema es exacto y no se
+    // pueden dar puntos cuando el período ya está cerrado.
+    const tema = d.temaId ? this.db.prepare("SELECT estado FROM temas WHERE id=? AND curso_id=? AND periodo_id=? AND materia_id IS ?").get(d.temaId, d.cursoId, d.periodoId, d.materiaId || null) : null;
+    if (!tema) return { error: 'No hay tema activo: los puntos se dan dentro de un tema pendiente' };
+    if (tema.estado !== 'pendiente' && tema.estado !== 'aplazado') return { error: 'El tema ya está cerrado' };
     const ids = [...new Set((d.estudianteIds || []).map(Number))].filter(n => Number.isInteger(n) && n > 0);
     if (ids.length === 0) return { error: 'Sin estudiantes' };
     const fase = ['I', 'D', 'C'].includes(d.fase) ? d.fase : null;

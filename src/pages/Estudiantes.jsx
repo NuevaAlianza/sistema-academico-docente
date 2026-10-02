@@ -150,10 +150,11 @@ export default function Estudiantes({ anio, materia }) {
   }
 
   async function reactivarEstudiante(e) {
-    await window.api.invoke('update-estudiante', e.id, {
+    const r = await window.api.invoke('update-estudiante', e.id, {
       nombre: e.nombre_completo, codigo: e.codigo_unico||'',
       numero: e.numero_lista, estado: 'activo',
     })
+    if (r?.error) { alert(r.error + '. Cámbiale el número antes de reactivarlo.'); return }
     cargarEstudiantes()
     toast2('✅ Estudiante reactivado')
   }
@@ -197,13 +198,11 @@ export default function Estudiantes({ anio, materia }) {
 
   async function guardar() {
     if (!form.nombre.trim()) { alert('El nombre es obligatorio'); return }
-    if (editId) {
-      await window.api.invoke('update-estudiante', editId, { nombre:form.nombre, codigo:form.codigo, numero:Number(form.numero)||0, estado:'activo' })
-      toast2('✅ Estudiante actualizado')
-    } else {
-      await window.api.invoke('create-estudiante', { cursoId:cursoSel.id, nombre:form.nombre, codigo:form.codigo, numero:Number(form.numero)||0 })
-      toast2('✅ Estudiante agregado')
-    }
+    const r = editId
+      ? await window.api.invoke('update-estudiante', editId, { nombre:form.nombre, codigo:form.codigo, numero:Number(form.numero)||0, estado:'activo' })
+      : await window.api.invoke('create-estudiante', { cursoId:cursoSel.id, nombre:form.nombre, codigo:form.codigo, numero:Number(form.numero)||0 })
+    if (r?.error) { alert(r.error); return }
+    toast2(editId ? '✅ Estudiante actualizado' : '✅ Estudiante agregado')
     setModal(false); cargarEstudiantes()
   }
 

@@ -150,6 +150,7 @@ export default function CursoEspacio({ anio, materia }) {
 
   async function sumarPuntos(ids, puntos, motivo = '', fase = null) {
     if (!perSel?.id || !materiaId) { showToast('Selecciona una materia y período'); return }
+    if (!temaDia) { showToast('🔒 No hay tema pendiente: no se pueden dar puntos'); return }
     const r = await window.api.invoke('add-participaciones', {
       cursoId: id, periodoId: perSel.id, materiaId, temaId: temaDia?.id || null,
       fecha: hoy, puntos, motivo, fase, estudianteIds: ids,
@@ -517,7 +518,7 @@ export default function CursoEspacio({ anio, materia }) {
                     background: grupoSel===k ? color : '#fff', color: grupoSel===k ? '#fff' : '#555', borderColor: grupoSel===k ? color : '#DDE3ED',
                   }}>{l}</button>
                 ))}
-                {typeof grupoSel === 'number' && (
+                {typeof grupoSel === 'number' && temaDia && (
                   <span style={{ marginLeft:'auto', display:'flex', gap:6 }}>
                     <button onClick={async () => { await sumarPuntos(visibles.map(e=>e.id), 1); showToast(`+1 → G${grupoSel} (${visibles.length})`) }}
                       style={{ padding:'4px 12px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', background:'#D1FAE5', color:'#065F46', border:'1.5px solid #6EE7B7' }}>+1 al grupo</button>
@@ -525,6 +526,12 @@ export default function CursoEspacio({ anio, materia }) {
                       style={{ padding:'4px 12px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', background:'#F8FAFD', color:'#555', border:'1.5px solid #DDE3ED' }}>± grupo…</button>
                   </span>
                 )}
+              </div>
+            )}
+
+            {!temaDia && (
+              <div style={{ padding:'8px 16px', background:'#FFF8E6', borderBottom:'1px solid #F3E2B3', fontSize:12, color:'#7A5C00' }}>
+                🔒 <strong>Puntos bloqueados</strong> — no hay temas pendientes en este período. Cada punto debe quedar en un tema; para dar puntos, agrega o reabre un tema en Temario.
               </div>
             )}
 
@@ -576,12 +583,14 @@ export default function CursoEspacio({ anio, materia }) {
 
                     {/* Participación */}
                     <div style={{ display:'flex', gap:4, alignItems:'center', justifyContent:'center' }}>
-                      <button title="Restar 1" onClick={() => sumarPuntos([est.id], -1)}
-                        style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #FCA5A5', background:'#FEE2E2', color:'#9B1C1C', fontSize:14, fontWeight:700, cursor:'pointer', lineHeight:1 }}>−</button>
-                      <button title="Sumar 1" onClick={() => sumarPuntos([est.id], 1)}
-                        style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #6EE7B7', background:'#D1FAE5', color:'#065F46', fontSize:14, fontWeight:700, cursor:'pointer', lineHeight:1 }}>+</button>
-                      <button title="Otra cantidad / motivo" onClick={() => abrirPuntos([est.id], est.nombre_completo.split(' ').slice(0,2).join(' '))}
-                        style={{ width:26, height:26, borderRadius:6, border:'1px solid #E2E8F0', background:'#F8FAFD', color:'#888', fontSize:11, fontWeight:700, cursor:'pointer' }}>±</button>
+                      {temaDia && <>
+                        <button title="Restar 1" onClick={() => sumarPuntos([est.id], -1)}
+                          style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #FCA5A5', background:'#FEE2E2', color:'#9B1C1C', fontSize:14, fontWeight:700, cursor:'pointer', lineHeight:1 }}>−</button>
+                        <button title="Sumar 1" onClick={() => sumarPuntos([est.id], 1)}
+                          style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #6EE7B7', background:'#D1FAE5', color:'#065F46', fontSize:14, fontWeight:700, cursor:'pointer', lineHeight:1 }}>+</button>
+                        <button title="Otra cantidad / motivo" onClick={() => abrirPuntos([est.id], est.nombre_completo.split(' ').slice(0,2).join(' '))}
+                          style={{ width:26, height:26, borderRadius:6, border:'1px solid #E2E8F0', background:'#F8FAFD', color:'#888', fontSize:11, fontWeight:700, cursor:'pointer' }}>±</button>
+                      </>}
                       <span style={{ minWidth:64, textAlign:'center', fontSize:12, fontWeight:700, color:colorPts(p.hoy) }} title="Hoy / acumulado del período">
                         {fmtPts(p.hoy)} <span style={{ color:'#CCC', fontWeight:400 }}>/</span> <span style={{ color:colorPts(p.periodo) }}>{fmtPts(p.periodo)}</span>
                       </span>
