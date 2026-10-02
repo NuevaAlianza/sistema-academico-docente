@@ -425,10 +425,10 @@ export default function Temario({anio,materia}){
       {/* MODAL Clonar */}
       {modalClonarT&&(
         <div className="modal-backdrop" data-closing={modalClonarT.closing} style={{position:'fixed',inset:0,background:'#0005',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500}} onClick={e=>{if(e.target===e.currentTarget)setModalClonar(false)}}>
-          <div className="modal-content" data-closing={modalClonarT.closing} style={{background:'#fff',borderRadius:14,padding:28,width:420,boxShadow:'0 16px 48px #0004'}}>
+          <div className="modal-content" data-closing={modalClonarT.closing} style={{background:'#fff',borderRadius:14,padding:28,width:420,maxHeight:'80vh',display:'flex',flexDirection:'column',boxShadow:'0 16px 48px #0004'}}>
             <h2 style={{color:'#1B3A6B',marginBottom:6,fontSize:17}}>📋 Clonar temas</h2>
             <p style={{color:'#888',fontSize:12,marginBottom:16}}>Copiando <strong>{temas.length} temas</strong> de <strong style={{color:colPer}}>{perSel?.nombre}</strong> de <strong style={{color:cursoSel?.color}}>{cursoSel?.nombre}</strong> a:</p>
-            <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
+            <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20,overflowY:'auto',flex:1,minHeight:0}}>
               {cursosOtros.map(c=>(
                 <div key={c.id} onClick={()=>toggleClon(c.id)} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',borderRadius:10,cursor:'pointer',background:clonDest.includes(c.id)?c.color+'15':'#F8FAFD',border:`2px solid ${clonDest.includes(c.id)?c.color:'#DDE3ED'}`}}>
                   <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${clonDest.includes(c.id)?c.color:'#CCC'}`,background:clonDest.includes(c.id)?c.color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
@@ -439,7 +439,7 @@ export default function Temario({anio,materia}){
                 </div>
               ))}
             </div>
-            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end',flexShrink:0}}>
               <button onClick={()=>setModalClonar(false)} style={{padding:'9px 20px',background:'#EEF2F7',border:'1px solid #DDE3ED',borderRadius:8,fontSize:13,cursor:'pointer',color:'#555'}}>Cancelar</button>
               <button onClick={ejecutarClonar} disabled={!clonDest.length||clonando} style={{padding:'9px 24px',background:clonDest.length?'#1B3A6B':'#CCC',color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:clonDest.length?'pointer':'default'}}>{clonando?'⏳ Clonando...':'📋 Clonar'}</button>
             </div>
