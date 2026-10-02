@@ -1,5 +1,22 @@
 # Changelog — Sistema Académico Docente
 
+## [1.9.0] — 2026-10-02
+
+### Added (Nuevo)
+- Participación por momento de la clase: en Cursos → Clase de hoy, el popup "±" ofrece Inicio / Desarrollo / Cierre (opcional) cuando el tema del día tiene plan de clase. El historial muestra el momento.
+- Calificaciones: al crear o editar una actividad se marcan los "Temas que evalúa". Al colocar notas, nueva columna "✋ Particip." con los puntos de esos temas y el total del período (`0 / +1`); si la actividad no tiene temas vinculados muestra el total del período con un aviso. Clic abre el historial con los movimientos de esos temas resaltados. Solo referencia: no modifica la nota.
+
+### Changed (Cambiado)
+- Los puntos de participación solo se pueden dar dentro de un tema pendiente o aplazado del curso. Sin tema abierto, Clase de hoy oculta los botones de puntos y muestra un aviso; la base de datos también lo rechaza.
+- Estudiantes: no se puede crear, editar ni reactivar un estudiante con un número de lista que ya tiene otro activo del mismo curso. Cada sección mantiene su propia numeración.
+
+### Fixed (Corregido)
+- Temario: el modal "Clonar" se salía de la pantalla con muchos cursos y no se podía confirmar.
+
+### Internal (Interno)
+- Columna `participaciones.fase` y tabla `actividad_temas` vía `migrarTablas()` (aditivas, no modifican datos existentes). Métodos `getActividadTemas`, `setActividadTemas`, `getParticipacionActividad`, `numeroListaOcupado`; canales IPC `get-actividad-temas`, `get-participacion-actividad`.
+- Componente compartido `src/components/HistorialParticipacion.jsx`.
+
 ## [1.8.2] — 2026-09-24
 
 ### Fixed (Corregido)

@@ -1,7 +1,7 @@
 # HANDOVER.md — Estado actual del proyecto
 # Sistema Académico Docente
 
-**Versión:** 1.8.2
+**Versión:** 1.9.0
 **Fecha:** 2026-10-02
 **Estado:** Participación por fase (Inicio/Desarrollo/Cierre) + vínculo actividad↔tema con participación visible en Calificaciones, commiteado, sin bump de versión (`package.json` sigue en 1.8.2) y sin `.exe`. Fix del modal Clonar de Temario también commiteado. Local va varios commits por delante de `origin/main` (nada pusheado desde v1.7.0).
 
@@ -9,7 +9,13 @@
 
 ## Lo último que se hizo
 
-### Participación por fase + vínculo actividad↔tema (2026-10-02) — commiteado, sin bump, sin `.exe`
+### Release v1.9.0 (2026-10-02)
+Incluye todo lo de abajo de esta fecha más dos cambios pedidos tras probar:
+- **Puntos solo dentro de un tema abierto**: `addParticipaciones` exige `temaId` de un tema `pendiente`/`aplazado` del mismo curso+período+materia; Clase de hoy oculta −/+/± y "+1 al grupo" sin tema y muestra aviso 🔒. Motivo (usuario): que el conteo por tema sea exacto y nadie pueda dar puntos con el período cerrado. Probado 10/10 sobre copia de la BD real.
+- **Número de lista único por curso** (entre activos; 0 = sin número): `numeroListaOcupado` en `createEstudiante`/`updateEstudiante`, incluye reactivar. Cada sección tiene su propia numeración (confirmado con el usuario). Probado 9/9 sobre copia; la BD real no tenía duplicados.
+- Analizado y **no construido** (pendiente de decisión del usuario): traslado de estudiante entre secciones. Recomendación: no cambiar `curso_id` (oculta notas/asistencia/participación de A y choca números); usar Retirar+Agregar (ya existe) o un "Trasladar a…" asistido (estado `trasladado`, columna `trasladado_de`, copia de notas del período por nombre de actividad con vista previa, sin tocar fórmulas). Preguntado al usuario: frecuencia y si las notas deben acompañarlo.
+
+### Participación por fase + vínculo actividad↔tema (2026-10-02) — incluido en v1.9.0
 Pedido del usuario: saber en qué momento de la clase se ganaron los puntos de participación y poder verlos al calificar la actividad correspondiente, sin que se sumen a la nota.
 - **Fase**: columna `participaciones.fase` (`'I'|'D'|'C'|NULL`, vía `migrarTablas()`). En CursoEspacio → popup "±", chips opcionales Inicio/Desarrollo/Cierre, solo si el tema del día tiene plan de clase (`meta_json.actividades`). Los botones rápidos −1/+1/+1 grupo no piden fase. El historial muestra la fase.
 - **Vínculo actividad↔tema**: tabla nueva `actividad_temas (actividad_id, tema_id)` con FK cascade + borrado explícito en `deleteActividad`/`deleteTema`. `setActividadTemas` solo acepta temas del mismo curso+período+materia. `createActividad`/`updateActividad` solo tocan el vínculo si reciben `temaIds` (otros llamadores no lo pisan). En el modal de actividad de Calificaciones: checkboxes "Temas que evalúa" (opcional).
@@ -18,7 +24,7 @@ Pedido del usuario: saber en qué momento de la clase se ganaron los puntos de p
 - Componente compartido nuevo `src/components/HistorialParticipacion.jsx` (usado por CursoEspacio y Calificaciones; exporta `FASES`, `fmtPts`, `colorPts`).
 - **Verificado**: backup `backup_pre_migracion_nombres_20261002_182158.db` antes de empezar; 24/24 pruebas del backend contra copia de la BD real (fase, validación de temas ajenos, suma igual a SQL independiente, limpieza al borrar, `initialize()` repetido); `vite build`; migración aplicada a la BD real al abrir `npm run dev` con las 8 participaciones previas intactas; revisado por el usuario en la ventana real (6to A, actividad 1 vinculada al tema 1 → `0 / +1`, actividades sin vínculo → total del período).
 - **Dato de la BD de esta PC**: en 6to A P1 el tema 6 (La Pascua) está `pendiente` mientras el 7 está `realizado`, por eso "Clase de hoy" sigue en La Pascua y todos los puntos están en ese tema.
-- Pendiente: decidir versión (¿1.9.0? es feature nueva), `.exe` (parar `npm run dev` antes), probar en la PC de trabajo.
+- Pendiente: instalar el `.exe` de v1.9.0 en la PC de trabajo y probar; `git push` + release en GitHub cuando el usuario lo pida.
 
 ### Fix: modal Clonar en Temario (2026-10-02) — commit `c4393fc`
 Con muchos cursos, la lista de destino empujaba Cancelar/Clonar fuera de la pantalla. Mismo patrón que el modal Archivos (`maxHeight: 80vh`, lista con scroll). Solo estilos.
