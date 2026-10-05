@@ -33,6 +33,33 @@ function scriptPie({ autoprint, embebido }) {
   return ''
 }
 
+function indicadoresTexto(est, cfg) {
+  const inds = []
+  if (est.sin_calificar) inds.push('Sin calificar')
+  else if (est.promedio < cfg.minimo) inds.push('Promedio bajo')
+  else if (est.promedio < cfg.semVerde) inds.push('Promedio límite')
+  if (est.asist_pct !== null && est.asist_pct < cfg.semAmarillo) inds.push('Asistencia baja')
+  else if (est.asist_pct !== null && est.asist_pct < cfg.semVerde) inds.push('Asistencia irregular')
+  if (inds.length === 0) inds.push('Satisfactorio')
+  return inds.join(' · ')
+}
+
+// También la usa la lista filtrada del visor del lote, para que se vea igual que el grupal
+const CSS_GRUPAL = `
+    body { font-family:'Segoe UI',sans-serif; margin:24px; color:#333; font-size:13px; background:#fff }
+    h1   { color:#1B3A6B; font-size:17px; margin:0 0 2px }
+    .sub { color:#888; font-size:12px; margin:0 0 16px }
+    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px }
+    .mc { border-radius:8px; padding:10px 14px; border-left:3px solid }
+    .mc .lbl { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px }
+    .mc .val { font-size:22px; font-weight:800 }
+    table { border-collapse:collapse; width:100% }
+    thead th { background:#1B3A6B; color:#9BBFED; padding:8px 10px; font-size:11px; text-align:left }
+    tbody tr { border-bottom:1px solid #F0F4FA }
+    .footer { margin-top:16px; font-size:11px; color:#AAA; border-top:1px solid #EEE; padding-top:8px; display:flex; justify-content:space-between }
+    @media print { @page { margin:12mm } }
+`
+
 // ──────────────────────────────────────────────────────────────────────────
 //  CONSTRUIR HTML — REPORTE GRUPAL (reutilizable: impresión manual o lote)
 // ──────────────────────────────────────────────────────────────────────────
@@ -52,40 +79,19 @@ export function construirHTMLGrupal(datos, cursoSel, periodoSel, materia, { auto
     const asistColor = est.asist_pct === null ? '#888' : est.asist_pct >= cfg.semVerde ? '#1A6B3A' : est.asist_pct >= cfg.semAmarillo ? '#C84B00' : '#B71C1C'
     const filaRiesgo = est.en_riesgo && !est.sin_calificar
 
-    const inds = []
-    if (est.sin_calificar) inds.push('Sin calificar')
-    else if (est.promedio < cfg.minimo) inds.push('Promedio bajo')
-    else if (est.promedio < cfg.semVerde) inds.push('Promedio límite')
-    if (est.asist_pct !== null && est.asist_pct < cfg.semAmarillo) inds.push('Asistencia baja')
-    else if (est.asist_pct !== null && est.asist_pct < cfg.semVerde) inds.push('Asistencia irregular')
-    if (inds.length === 0) inds.push('Satisfactorio')
-
     return `<tr style="background:${filaRiesgo ? '#FFF8F8' : i%2===0?'#fff':'#FAFBFD'}">
       <td style="padding:7px 10px;color:#999;font-weight:700;font-size:11px">${String(est.numero_lista).padStart(2,'0')}</td>
       <td style="padding:7px 10px;font-weight:600;color:#1B3A6B;font-size:12px">${escapeHtml(est.nombre_completo)}${incluirObs && est.obs_count>0?' ●':''}</td>
       <td style="padding:7px 10px;text-align:center;font-weight:800;color:${promColor};font-size:13px">${est.sin_calificar ? '—' : est.promedio}</td>
       <td style="padding:7px 10px;text-align:center;font-weight:700;color:${asistColor};font-size:12px">${est.asist_pct !== null ? est.asist_pct+'%' : '—'}</td>
       <td style="padding:7px 10px;text-align:center;color:#B71C1C;font-weight:700;font-size:12px">${est.asist_ausentes}</td>
-      <td style="padding:7px 10px;font-size:11px;color:#555">${inds.join(' · ')}</td>
+      <td style="padding:7px 10px;font-size:11px;color:#555">${indicadoresTexto(est, cfg)}</td>
     </tr>`
   }).join('')
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
   <title>Reporte ${curso} — ${periodo}</title>
-  <style>
-    body { font-family:'Segoe UI',sans-serif; margin:24px; color:#333; font-size:13px; background:#fff }
-    h1   { color:#1B3A6B; font-size:17px; margin:0 0 2px }
-    .sub { color:#888; font-size:12px; margin:0 0 16px }
-    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px }
-    .mc { border-radius:8px; padding:10px 14px; border-left:3px solid }
-    .mc .lbl { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px }
-    .mc .val { font-size:22px; font-weight:800 }
-    table { border-collapse:collapse; width:100% }
-    thead th { background:#1B3A6B; color:#9BBFED; padding:8px 10px; font-size:11px; text-align:left }
-    tbody tr { border-bottom:1px solid #F0F4FA }
-    .footer { margin-top:16px; font-size:11px; color:#AAA; border-top:1px solid #EEE; padding-top:8px; display:flex; justify-content:space-between }
-    @media print { @page { margin:12mm } }
-  </style></head><body>
+  <style>${CSS_GRUPAL}</style></head><body>
   <h1>📊 Reporte Grupal — ${curso}</h1>
   <p class="sub">${periodo}${periodoSel.titulo?' — '+escapeHtml(periodoSel.titulo):''} · Materia: ${escapeHtml(materia?.nombre || 'General')} · Generado el ${fecha}</p>
 
@@ -267,9 +273,13 @@ export function construirHTMLLote({ secciones, periodo, materia, grado, incluirO
   const nombresSec = secciones.map(s => s.curso.seccion || s.curso.nombre).join(', ')
   const titulo = `Reporte de seguimiento — ${grado} ${nombresSec} — ${periodo.nombre}`
 
+  const encabezado = `${periodo.nombre}${periodo.titulo ? ' — ' + periodo.titulo : ''} · Materia: ${materia?.nombre || 'General'} · Generado el ${fechaHoy()}`
   const datos = {
     titulo,
+    encabezado,
+    grado,
     cfg,
+    cssLista: CSS_GRUPAL,
     secciones: secciones.map(s => ({
       id:     s.curso.id,
       nombre: s.curso.nombre,
@@ -283,6 +293,9 @@ export function construirHTMLLote({ secciones, periodo, materia, grado, incluirO
       nombre: est.nombre_completo,
       prom:   est.sin_calificar ? null : est.promedio,
       asist:  est.asist_pct,
+      aus:    est.asist_ausentes,
+      riesgoFila: est.en_riesgo && !est.sin_calificar,
+      inds:   indicadoresTexto(est, s.grupal.config || cfg),
       estado: estadoEstudiante(est, cfg),
       doc:    construirHTMLIndividual(s.individuales[i], s.curso, periodo, materia, s.grupal.config || cfg, opts),
     }))),
@@ -300,7 +313,7 @@ export function construirHTMLLote({ secciones, periodo, materia, grado, incluirO
   <div class="marca">📊</div>
   <div class="top-txt">
     <h1>Reporte de seguimiento — ${escapeHtml(grado)} ${escapeHtml(nombresSec)}</h1>
-    <p>${escapeHtml(periodo.nombre)}${periodo.titulo ? ' — ' + escapeHtml(periodo.titulo) : ''} · Materia: ${escapeHtml(materia?.nombre || 'General')} · Generado el ${fechaHoy()}</p>
+    <p>${escapeHtml(encabezado)}</p>
   </div>
 </header>
 
@@ -327,6 +340,7 @@ export function construirHTMLLote({ secciones, periodo, materia, grado, incluirO
       <div class="acciones">
         <button id="ant" class="nav" title="Anterior (↑)">‹</button>
         <button id="sig" class="nav" title="Siguiente (↓)">›</button>
+        <button id="imprimirTodos" hidden>🖨️ Reportes individuales</button>
         <button id="imprimir" class="primario">🖨️ Imprimir / Guardar PDF</button>
       </div>
     </div>
@@ -400,6 +414,10 @@ const CSS_VISOR = `
   .acciones button:active { transform:scale(.97) }
   .acciones button:disabled { opacity:.4; cursor:default; transform:none }
   .acciones .primario { background:var(--base); border-color:var(--base); color:#fff }
+  .acciones button[hidden] { display:none }
+  .item.lista-f { margin-bottom:4px; background:color-mix(in srgb, var(--base) 5%, #fff) }
+  .item.lista-f .nom { color:var(--base) }
+  .item.lista-f .cuenta { font-size:11px; font-weight:700; color:var(--base); background:#fff; border:1px solid var(--borde); border-radius:20px; padding:1px 8px }
   iframe { flex:1; width:100%; border:0; background:#fff }
   .leyenda { display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:12px; font-size:11.5px; color:var(--gris) }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--c); margin-right:6px; vertical-align:1px }
@@ -441,7 +459,7 @@ function visorLote() {
     if (v === null) return 'sin'
     return v >= D.cfg.semVerde ? 'bien' : v >= D.cfg.semAmarillo ? 'limite' : 'riesgo'
   }
-  function normal(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase() }
+  function normal(s) { return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() }
   function seccion(id) { return D.secciones.find(function (s) { return s.id === id }) }
 
   function enSeccion(e) { return st.sec === 'todas' || e.sec === st.sec }
@@ -483,16 +501,20 @@ function visorLote() {
     return lista.slice().sort(f)
   }
 
+  // Estudiantes visibles con los filtros actuales, en el orden de la lista
+  var filtrados = []
+  function filtrando() { return !!st.q.trim() || st.estado !== 'todos' }
+
   function pintarLista() {
     visibles = []
+    filtrados = []
     var html = ''
-    var filtrando = st.q || st.estado !== 'todos'
     D.secciones.forEach(function (s) {
       if (st.sec !== 'todas' && st.sec !== s.id) return
       var ests = ordenar(D.estudiantes.filter(function (e) {
         return e.sec === s.id && coincide(e) && (st.estado === 'todos' || e.estado === st.estado)
       }))
-      if (filtrando && ests.length === 0) return
+      if (filtrando() && ests.length === 0) return
       html += '<div class="grupo">' + esc(s.nombre) + '</div>'
       var kG = 'g' + s.id
       visibles.push(kG)
@@ -501,6 +523,7 @@ function visorLote() {
       ests.forEach(function (e) {
         var k = 'e' + e.id
         visibles.push(k)
+        filtrados.push(e)
         html += '<button class="item' + (st.sel === k ? ' sel' : '') + '" data-k="' + k + '">' +
           '<span class="num">' + String(e.n).padStart(2, '0') + '</span>' +
           '<span class="nom" title="' + esc(e.nombre) + '">' + esc(e.nombre) + '</span>' +
@@ -508,13 +531,89 @@ function visorLote() {
           '<span class="prom ' + tono(e.prom) + '">' + (e.prom === null ? '—' : e.prom) + '</span></button>'
       })
     })
+    if (filtrando() && filtrados.length > 0) {
+      visibles.unshift('L')
+      html = '<button class="item lista-f' + (st.sel === 'L' ? ' sel' : '') + '" data-k="L">' +
+        '<span class="num">📋</span><span class="nom">Lista filtrada</span><span class="cuenta">' + filtrados.length + '</span></button>' + html
+    }
     $('lista').innerHTML = html || '<div class="vacio">Ningún estudiante coincide con la búsqueda.</div>'
     var sel = $('lista').querySelector('.sel')
     if (sel) sel.scrollIntoView({ block: 'nearest' })
     pintarBotones()
   }
 
+  function seccionesTexto() {
+    var secs = st.sec === 'todas' ? D.secciones : [seccion(st.sec)]
+    return D.grado + ' ' + secs.map(function (s) { return s.corto }).join(', ')
+  }
+  function descFiltro() {
+    var partes = []
+    if (st.estado !== 'todos') partes.push(ESTADOS.find(function (x) { return x.id === st.estado }).lbl)
+    if (st.q.trim()) partes.push('búsqueda “' + st.q.trim() + '”')
+    return partes.join(' · ')
+  }
+
+  // Partido en dos para no cerrar el <script> del visor que contiene esta función
+  var CIERRE = '</' + 'script>'
+  var SCRIPT_IMPRIMIR = '<script>addEventListener("message",function(e){if(e.data==="sd-imprimir")window.print()})' + CIERRE
+
+  // Lista de los estudiantes filtrados con el mismo diseño del reporte grupal
+  function docLista() {
+    var cfg = D.cfg
+    var color = function (v) { return v === null ? '#888' : v >= cfg.semVerde ? '#1A6B3A' : v >= cfg.semAmarillo ? '#C84B00' : '#B71C1C' }
+    var media = function (arr) { return arr.length ? Math.round(arr.reduce(function (s, v) { return s + v }, 0) / arr.length) : null }
+    var prom  = media(filtrados.filter(function (e) { return e.prom !== null }).map(function (e) { return e.prom }))
+    var asist = media(filtrados.filter(function (e) { return e.asist !== null }).map(function (e) { return e.asist }))
+    var total = D.estudiantes.filter(enSeccion).length
+    var varias = D.secciones.length > 1 && st.sec === 'todas'
+    var td = 'padding:7px 10px;'
+    var filas = filtrados.map(function (e, i) {
+      return '<tr style="background:' + (e.riesgoFila ? '#FFF8F8' : i % 2 === 0 ? '#fff' : '#FAFBFD') + '">' +
+        '<td style="' + td + 'color:#999;font-weight:700;font-size:11px">' + String(e.n).padStart(2, '0') + '</td>' +
+        (varias ? '<td style="' + td + 'color:#555;font-size:12px">' + esc(seccion(e.sec).corto) + '</td>' : '') +
+        '<td style="' + td + 'font-weight:600;color:#1B3A6B;font-size:12px">' + esc(e.nombre) + '</td>' +
+        '<td style="' + td + 'text-align:center;font-weight:800;color:' + color(e.prom) + ';font-size:13px">' + (e.prom === null ? '—' : e.prom) + '</td>' +
+        '<td style="' + td + 'text-align:center;font-weight:700;color:' + color(e.asist) + ';font-size:12px">' + (e.asist === null ? '—' : e.asist + '%') + '</td>' +
+        '<td style="' + td + 'text-align:center;color:#B71C1C;font-weight:700;font-size:12px">' + e.aus + '</td>' +
+        '<td style="' + td + 'font-size:11px;color:#555">' + esc(e.inds) + '</td></tr>'
+    }).join('')
+    var mc = function (lbl, val, col, bg) {
+      return '<div class="mc" style="border-color:' + col + ';background:' + bg + '"><div class="lbl">' + lbl + '</div><div class="val" style="color:' + col + '">' + val + '</div></div>'
+    }
+    var titulo = 'Lista — ' + descFiltro() + ' — ' + seccionesTexto()
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + esc(titulo) + '</title><style>' + D.cssLista + '</style></head><body>' +
+      '<h1>📋 ' + esc(descFiltro()) + ' — ' + esc(seccionesTexto()) + '</h1>' +
+      '<p class="sub">' + esc(D.encabezado) + '</p>' +
+      '<div class="metrics">' +
+        mc('En la lista', filtrados.length + ' de ' + total, '#2563A8', '#EEF5FF') +
+        mc('Promedio de la lista', prom === null ? '—' : prom, color(prom), '#F9F9F9') +
+        mc('Asistencia promedio', asist === null ? '—' : asist + '%', color(asist), '#F9F9F9') +
+        mc('Ausencias', filtrados.reduce(function (s, e) { return s + e.aus }, 0), '#A32D2D', '#FFF0F0') +
+      '</div>' +
+      '<table><thead><tr><th style="width:36px">#</th>' + (varias ? '<th style="width:60px">Sección</th>' : '') +
+      '<th>Estudiante</th><th style="text-align:center;width:70px">Promedio</th><th style="text-align:center;width:80px">Asistencia</th>' +
+      '<th style="text-align:center;width:70px">Ausencias</th><th>Indicador</th></tr></thead><tbody>' + filas + '</tbody></table>' +
+      '<div class="footer"><span>Filtro: ' + esc(descFiltro()) + '</span><span>' + esc(seccionesTexto()) + '</span></div>' +
+      SCRIPT_IMPRIMIR + '</body></html>'
+  }
+
+  // Reportes individuales de la lista en un solo documento, uno por página
+  function docReportes() {
+    var parser = new DOMParser(), estilo = '', cuerpos = []
+    filtrados.forEach(function (e) {
+      var d = parser.parseFromString(e.doc, 'text/html')
+      if (!estilo) estilo = d.querySelector('style').textContent
+      Array.prototype.forEach.call(d.querySelectorAll('script'), function (sc) { sc.remove() })
+      cuerpos.push('<section class="pag">' + d.body.innerHTML + '</section>')
+    })
+    var titulo = 'Reportes — ' + descFiltro() + ' — ' + seccionesTexto()
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + esc(titulo) + '</title><style>' + estilo +
+      ' body{margin:0} .pag{padding:24px} @media print{ .pag{padding:0; break-after:page} .pag:last-child{break-after:auto} }</style></head><body>' +
+      cuerpos.join('') + SCRIPT_IMPRIMIR + '</body></html>'
+  }
+
   function buscar(k) {
+    if (k === 'L') return { doc: docLista(), titulo: 'Lista filtrada — ' + descFiltro(), sub: filtrados.length + ' estudiante(s)' }
     if (k.charAt(0) === 'g') {
       var s = seccion(Number(k.slice(1)))
       return { doc: s.doc, titulo: 'Resumen grupal — ' + s.nombre, sub: '' }
@@ -543,6 +642,9 @@ function visorLote() {
     $('ant').disabled = i <= 0
     $('sig').disabled = i === -1 || i >= visibles.length - 1
     $('imprimir').disabled = !st.sel
+    var enLista = st.sel === 'L'
+    $('imprimirTodos').hidden = !enLista
+    if (enLista) $('imprimirTodos').textContent = '🖨️ Reportes individuales (' + filtrados.length + ')'
   }
 
   function mover(d) {
@@ -556,9 +658,24 @@ function visorLote() {
     if (st.sel && marco.contentWindow) marco.contentWindow.postMessage('sd-imprimir', '*')
   }
 
-  function refrescar() {
+  var marcoLote = null
+  function imprimirTodos() {
+    if (filtrados.length === 0) return
+    if (marcoLote) marcoLote.remove()
+    marcoLote = document.createElement('iframe')
+    marcoLote.setAttribute('aria-hidden', 'true')
+    marcoLote.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden'
+    marcoLote.onload = function () { marcoLote.contentWindow.postMessage('sd-imprimir', '*') }
+    marcoLote.srcdoc = docReportes()
+    document.body.appendChild(marcoLote)
+  }
+
+  // irALista: al cambiar filtro o búsqueda, el visor muestra la lista filtrada
+  function refrescar(irALista) {
     pintarMetricas(); pintarChips(); pintarLista()
-    if (visibles.indexOf(st.sel) === -1) seleccionar(visibles[0])
+    var hayLista = visibles.indexOf('L') !== -1
+    if (hayLista && (irALista || st.sel === 'L')) seleccionar('L')
+    else if (visibles.indexOf(st.sel) === -1) seleccionar(visibles[0])
   }
 
   $('metricas').addEventListener('click', function (ev) {
@@ -566,7 +683,7 @@ function visorLote() {
     if (!b) return
     var est = b.getAttribute('data-estado')
     st.estado = st.estado === est ? 'todos' : est
-    refrescar()
+    refrescar(true)
   })
   $('chipsSec').addEventListener('click', function (ev) {
     var b = ev.target.closest('[data-sec]')
@@ -582,11 +699,12 @@ function visorLote() {
     // En pantallas angostas el visor queda debajo de la lista
     if (window.matchMedia('(max-width:860px)').matches) document.querySelector('.visor').scrollIntoView({ behavior: 'smooth' })
   })
-  $('buscar').addEventListener('input', function (ev) { st.q = ev.target.value; refrescar() })
+  $('buscar').addEventListener('input', function (ev) { st.q = ev.target.value; refrescar(true) })
   $('orden').addEventListener('change', function (ev) { st.orden = ev.target.value; refrescar() })
   $('ant').addEventListener('click', function () { mover(-1) })
   $('sig').addEventListener('click', function () { mover(1) })
   $('imprimir').addEventListener('click', imprimir)
+  $('imprimirTodos').addEventListener('click', imprimirTodos)
 
   document.addEventListener('keydown', function (ev) {
     // Ctrl+P imprime el reporte abierto, no la página del visor completa
