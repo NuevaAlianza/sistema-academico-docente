@@ -95,3 +95,24 @@ No se necesitan en producción, pero se conservan como referencia histórica.
 | `verificar-backup-reciente.py` | Validar MD5 y contenido de un backup específico |
 | `migrar-flujo-techo.js` | Migración BD para refactor flujo inverso v1.4 |
 | `limpiar-distribuciones.js` | Corrección de keys en distribucion_multi |
+
+---
+
+## sembrar-prueba-reportes.js
+
+Siembra datos de prueba en 6to (año activo, P1, primera materia del año) para revisar Reportes:
+8 temas por sección (5 realizados, 1 aplazado, 2 pendientes), 5 actividades (4 simples, una por
+competencia, y 1 multi con las 4) vinculadas a temas, notas con perfiles variados (van bien, límite,
+bajo, sin calificar, muchas faltas), asistencia desde el 24-sep hasta hoy **solo en días sin registro**
+y 5 observaciones del cuaderno anecdótico por sección (texto con prefijo `[Prueba]`).
+
+Usa los métodos de `database.js`, así que corre con el Electron del proyecto (no con Python).
+Todo lo creado se anota en `datos_prueba_reportes.json` (en AppData) y `--limpiar` lo borra.
+No vuelve a sembrar si ya hay datos registrados.
+
+```
+$env:ELECTRON_RUN_AS_NODE='1'; .\node_modules\electron\dist\electron.exe scripts\sembrar-prueba-reportes.js
+$env:ELECTRON_RUN_AS_NODE='1'; .\node_modules\electron\dist\electron.exe scripts\sembrar-prueba-reportes.js --limpiar
+```
+
+**Antes:** `backup-pre-migracion.py`.
