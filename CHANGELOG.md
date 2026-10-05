@@ -1,5 +1,23 @@
 # Changelog — Sistema Académico Docente
 
+## [1.9.1] — 2026-10-05
+
+### Changed (Cambiado)
+- Reportes → "Generar reporte por lote" ahora crea **un solo archivo HTML** en vez de una carpeta con un PDF por estudiante. Se abre en cualquier navegador sin internet y se puede enviar al supervisor: tarjetas Van bien / Límite / En riesgo / Sin calificar (clic = filtro), filtro por sección, búsqueda por nombre o número, orden, y visor con el resumen grupal y el reporte de cada estudiante con el mismo diseño del programa.
+- Desde el HTML, "Imprimir / Guardar PDF" (o Ctrl+P) imprime solo el reporte abierto.
+
+### Added (Nuevo)
+- Lista filtrada en el HTML del lote: al filtrar aparece "📋 Lista filtrada" con solo esos estudiantes, imprimible; y "Reportes individuales (N)" imprime en un solo PDF el reporte de cada estudiante filtrado, uno por página.
+- Casilla "Incluir cuaderno anecdótico" al generar el lote (desmarcada por defecto, porque quien recibe el archivo ve a todos los estudiantes).
+
+### Fixed (Corregido)
+- Reportes: nombres, temas u observaciones con caracteres como `<` o `&` rompían el reporte impreso; ahora se muestran tal cual.
+
+### Internal (Interno)
+- Plantillas de reportes movidas a `src/reportes/plantillasHTML.js` (las usan la impresión desde el programa y el lote).
+- Canal IPC `generar-reportes-lote` (PDF por estudiante con `printToPDF`) reemplazado por `guardar-reporte-html`.
+- Script `scripts/sembrar-prueba-reportes.js` para sembrar/limpiar datos de prueba de Reportes en 6to P1.
+
 ## [1.9.0] — 2026-10-02
 
 ### Added (Nuevo)

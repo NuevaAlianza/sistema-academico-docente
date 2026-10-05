@@ -1,15 +1,15 @@
 # HANDOVER.md — Estado actual del proyecto
 # Sistema Académico Docente
 
-**Versión:** 1.9.0
-**Fecha:** 2026-10-02
-**Estado:** Participación por fase (Inicio/Desarrollo/Cierre) + vínculo actividad↔tema con participación visible en Calificaciones, commiteado, sin bump de versión (`package.json` sigue en 1.8.2) y sin `.exe`. Fix del modal Clonar de Temario también commiteado. Local va varios commits por delante de `origin/main` (nada pusheado desde v1.7.0).
+**Versión:** 1.9.1
+**Fecha:** 2026-10-05
+**Estado:** v1.9.1 — reporte por lote como un solo HTML interactivo (filtros, lista filtrada imprimible, reportes individuales de la lista). `.exe` generado en `release/`. Datos de prueba sembrados en 6to P1 (borrar con `scripts/sembrar-prueba-reportes.js --limpiar`). Pendiente de decisión: asignar F.I.H.R a los registros del año actual que quedaron sin materia. Local va varios commits por delante de `origin/main` (nada pusheado desde v1.7.0).
 
 ---
 
 ## Lo último que se hizo
 
-### Reporte por lote → un solo HTML interactivo (2026-10-05) — commiteado, sin bump de versión
+### Release v1.9.1 (2026-10-05) — reporte por lote → un solo HTML interactivo
 Pedido del usuario: en vez de una carpeta con un PDF por estudiante, un archivo para enviar al supervisor donde se pueda buscar/filtrar quién va bien y quién va flojo, y desde ahí sacar el PDF de un estudiante (p. ej. para un padre). Cuidar la estética del programa.
 - Plantillas movidas a `src/reportes/plantillasHTML.js` (`construirHTMLGrupal`, `construirHTMLIndividual`, `construirHTMLLote`, `escapeHtml`, `slug`). El PDF individual/grupal desde el programa usa las mismas plantillas, así todo se ve igual.
 - El lote ahora arma un `.html` autocontenido (sin dependencias, funciona offline con doble clic): tarjetas Estudiantes / Van bien / Límite / En riesgo / Sin calificar (clic = filtro) + promedio general, chips por sección, búsqueda por nombre o número, orden, lista + visor del reporte (iframe `srcdoc`), ‹ › y ↑/↓, botón "Imprimir / Guardar PDF" (y Ctrl+P) que imprime solo el reporte abierto. Responsive para celular.
