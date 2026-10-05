@@ -9,6 +9,17 @@
 
 ## Lo último que se hizo
 
+### Reporte por lote → un solo HTML interactivo (2026-10-05) — commiteado, sin bump de versión
+Pedido del usuario: en vez de una carpeta con un PDF por estudiante, un archivo para enviar al supervisor donde se pueda buscar/filtrar quién va bien y quién va flojo, y desde ahí sacar el PDF de un estudiante (p. ej. para un padre). Cuidar la estética del programa.
+- Plantillas movidas a `src/reportes/plantillasHTML.js` (`construirHTMLGrupal`, `construirHTMLIndividual`, `construirHTMLLote`, `escapeHtml`, `slug`). El PDF individual/grupal desde el programa usa las mismas plantillas, así todo se ve igual.
+- El lote ahora arma un `.html` autocontenido (sin dependencias, funciona offline con doble clic): tarjetas Estudiantes / Van bien / Límite / En riesgo / Sin calificar (clic = filtro) + promedio general, chips por sección, búsqueda por nombre o número, orden, lista + visor del reporte (iframe `srcdoc`), ‹ › y ↑/↓, botón "Imprimir / Guardar PDF" (y Ctrl+P) que imprime solo el reporte abierto. Responsive para celular.
+- "En riesgo" = mismo `en_riesgo` de `getReporteGrupal`; "Límite" = promedio entre mínimo y semáforo verde. Los colores de promedio/asistencia en la lista usan los mismos cortes que los reportes.
+- Casilla "Incluir cuaderno anecdótico" en el modal (desmarcada por defecto): en un archivo compartido todos ven a todos.
+- Todo texto libre (nombres, temas, observaciones) ahora se escapa — antes un `<` rompía el reporte.
+- `main.js`: `generar-reportes-lote` (printToPDF por estudiante) reemplazado por `guardar-reporte-html` (diálogo Guardar). Toast con "🌐 Abrir reporte".
+- Verificado con datos de una copia de la BD real (6to A+B, P3, 68 estudiantes, ~370 KB; 121 estudiantes ≈ 615 KB): conteo en riesgo del visor = resumen grupal (A 14, B 18), filtros/búsqueda/orden/navegación, escape con nombre `</script><b>…` y observación con `<img onerror>`, imprimir y Ctrl+P llegan al reporte abierto; probado también con la plantilla minificada (como queda en el `.exe`). `vite build` OK. **Falta**: que el usuario pruebe el modal en la app real (`npm run dev`).
+- Dato de la BD de esta PC: todas las `actividades` tienen `materia_id` NULL, así que filtrando por materia (año 2, F.I.H.R) los reportes salen "sin calificar". Es de los datos de prueba, no del código.
+
 ### Release v1.9.0 (2026-10-02)
 Incluye todo lo de abajo de esta fecha más dos cambios pedidos tras probar:
 - **Puntos solo dentro de un tema abierto**: `addParticipaciones` exige `temaId` de un tema `pendiente`/`aplazado` del mismo curso+período+materia; Clase de hoy oculta −/+/± y "+1 al grupo" sin tema y muestra aviso 🔒. Motivo (usuario): que el conteo por tema sea exacto y nadie pueda dar puntos con el período cerrado. Probado 10/10 sobre copia de la BD real.

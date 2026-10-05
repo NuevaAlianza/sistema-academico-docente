@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useModalTransition } from '../hooks/useModalTransition'
+import { slug, construirHTMLGrupal, construirHTMLIndividual, construirHTMLLote } from '../reportes/plantillasHTML'
 
 const COLOR_BASE = '#1B3A6B'
 const S = {
@@ -42,249 +43,22 @@ function indicadores(est, cfg = { minimo: 70, semVerde: 80, semAmarillo: 60 }) {
   return items
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-//  slug: nombre de archivo seguro a partir de un texto libre
-// ──────────────────────────────────────────────────────────────────────────
-function slug(s) {
-  const diacriticos = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g')
-  return (s || '')
-    .normalize('NFD').replace(diacriticos, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-//  CONSTRUIR HTML — REPORTE GRUPAL (reutilizable: impresión manual o lote)
-// ──────────────────────────────────────────────────────────────────────────
-function construirHTMLGrupal(datos, cursoSel, periodoSel, materia, { autoprint = true } = {}) {
-  const { temas_total, temas_realizados, estudiantes } = datos
-  const cfg       = datos.config || { semVerde: 80, semAmarillo: 60, minimo: 70 }
-  const conProm   = estudiantes.filter(e => !e.sin_calificar)
-  const promGrupo = conProm.length > 0 ? Math.round(conProm.reduce((s, e) => s + e.promedio, 0) / conProm.length) : null
-  const temaPct   = temas_total > 0 ? Math.round(temas_realizados / temas_total * 100) : 0
-  const enRiesgo  = estudiantes.filter(e => e.en_riesgo).length
-  const fecha     = new Date().toLocaleDateString('es-DO', { day:'2-digit', month:'long', year:'numeric' })
-  // autoprint:false para el lote — printToPDF() falla si la página además llama a window.print() sola
-  const scriptImpresion = autoprint ? '<script>window.onload=()=>window.print()</script>' : ''
-
-  const filas = estudiantes.map((est, i) => {
-    const promColor  = est.sin_calificar ? '#888' : est.promedio >= cfg.semVerde ? '#1A6B3A' : est.promedio >= cfg.semAmarillo ? '#C84B00' : '#B71C1C'
-    const asistColor = est.asist_pct === null ? '#888' : est.asist_pct >= cfg.semVerde ? '#1A6B3A' : est.asist_pct >= cfg.semAmarillo ? '#C84B00' : '#B71C1C'
-    const filaRiesgo = est.en_riesgo && !est.sin_calificar
-
-    const inds = []
-    if (est.sin_calificar) inds.push('Sin calificar')
-    else if (est.promedio < cfg.minimo) inds.push('Promedio bajo')
-    else if (est.promedio < cfg.semVerde) inds.push('Promedio límite')
-    if (est.asist_pct !== null && est.asist_pct < cfg.semAmarillo) inds.push('Asistencia baja')
-    else if (est.asist_pct !== null && est.asist_pct < cfg.semVerde) inds.push('Asistencia irregular')
-    if (inds.length === 0) inds.push('Satisfactorio')
-
-    return `<tr style="background:${filaRiesgo ? '#FFF8F8' : i%2===0?'#fff':'#FAFBFD'}">
-      <td style="padding:7px 10px;color:#999;font-weight:700;font-size:11px">${String(est.numero_lista).padStart(2,'0')}</td>
-      <td style="padding:7px 10px;font-weight:600;color:#1B3A6B;font-size:12px">${est.nombre_completo}${est.obs_count>0?' ●':''}</td>
-      <td style="padding:7px 10px;text-align:center;font-weight:800;color:${promColor};font-size:13px">${est.sin_calificar ? '—' : est.promedio}</td>
-      <td style="padding:7px 10px;text-align:center;font-weight:700;color:${asistColor};font-size:12px">${est.asist_pct !== null ? est.asist_pct+'%' : '—'}</td>
-      <td style="padding:7px 10px;text-align:center;color:#B71C1C;font-weight:700;font-size:12px">${est.asist_ausentes}</td>
-      <td style="padding:7px 10px;font-size:11px;color:#555">${inds.join(' · ')}</td>
-    </tr>`
-  }).join('')
-
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>Reporte ${cursoSel.nombre} — ${periodoSel.nombre}</title>
-  <style>
-    body { font-family:'Segoe UI',sans-serif; margin:24px; color:#333; font-size:13px }
-    h1   { color:#1B3A6B; font-size:17px; margin:0 0 2px }
-    .sub { color:#888; font-size:12px; margin:0 0 16px }
-    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px }
-    .mc { border-radius:8px; padding:10px 14px; border-left:3px solid }
-    .mc .lbl { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px }
-    .mc .val { font-size:22px; font-weight:800 }
-    table { border-collapse:collapse; width:100% }
-    thead th { background:#1B3A6B; color:#9BBFED; padding:8px 10px; font-size:11px; text-align:left }
-    tbody tr { border-bottom:1px solid #F0F4FA }
-    .footer { margin-top:16px; font-size:11px; color:#AAA; border-top:1px solid #EEE; padding-top:8px; display:flex; justify-content:space-between }
-    @media print { @page { margin:12mm } }
-  </style></head><body>
-  <h1>📊 Reporte Grupal — ${cursoSel.nombre}</h1>
-  <p class="sub">${periodoSel.nombre}${periodoSel.titulo?' — '+periodoSel.titulo:''} · Materia: ${materia?.nombre || 'General'} · Generado el ${fecha}</p>
-
-  <div class="metrics">
-    <div class="mc" style="border-color:#2563A8;background:#EEF5FF">
-      <div class="lbl">Estudiantes</div>
-      <div class="val" style="color:#2563A8">${estudiantes.length}</div>
-    </div>
-    <div class="mc" style="border-color:${enRiesgo>0?'#A32D2D':'#3B6D11'};background:${enRiesgo>0?'#FFF0F0':'#F0FFF4'}">
-      <div class="lbl">En riesgo</div>
-      <div class="val" style="color:${enRiesgo>0?'#A32D2D':'#3B6D11'}">${enRiesgo}</div>
-    </div>
-    <div class="mc" style="border-color:${promGrupo>=80?'#3B6D11':promGrupo>=60?'#854F0B':'#A32D2D'};background:#F9F9F9">
-      <div class="lbl">Promedio grupo</div>
-      <div class="val" style="color:${promGrupo>=80?'#3B6D11':promGrupo>=60?'#854F0B':'#A32D2D'}">${promGrupo ?? '—'}</div>
-    </div>
-    <div class="mc" style="border-color:#854F0B;background:#FFFBF0">
-      <div class="lbl">Avance temario</div>
-      <div class="val" style="color:#854F0B">${temas_realizados}/${temas_total} (${temaPct}%)</div>
-    </div>
-  </div>
-
-  <table>
-    <thead><tr>
-      <th style="width:36px">#</th>
-      <th>Estudiante</th>
-      <th style="text-align:center;width:70px">Promedio</th>
-      <th style="text-align:center;width:80px">Asistencia</th>
-      <th style="text-align:center;width:70px">Ausencias</th>
-      <th>Indicador</th>
-    </tr></thead>
-    <tbody>${filas}</tbody>
-  </table>
-
-  <div class="footer">
-    <span>● = tiene observaciones en cuaderno anecdótico</span>
-    <span>${cursoSel.nombre} · ${periodoSel.nombre} · ${fecha}</span>
-  </div>
-  ${scriptImpresion}
-  </body></html>`
-
-  return html
+function abrirVentanaImpresion(html) {
+  const win = window.open('', '_blank')
+  if (!win) {
+    alert('No se pudo abrir la ventana de impresión. Verifica que el navegador no esté bloqueando ventanas emergentes.')
+    return
+  }
+  win.document.write(html)
+  win.document.close()
 }
 
 function exportarPDFGrupal(datos, cursoSel, periodoSel, materia) {
-  const html = construirHTMLGrupal(datos, cursoSel, periodoSel, materia)
-  const win  = window.open('', '_blank')
-  if (!win) {
-    alert('No se pudo abrir la ventana de impresión. Verifica que el navegador no esté bloqueando ventanas emergentes.')
-    return
-  }
-  win.document.write(html)
-  win.document.close()
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-//  CONSTRUIR HTML — REPORTE INDIVIDUAL (reutilizable: impresión manual o lote)
-// ──────────────────────────────────────────────────────────────────────────
-function construirHTMLIndividual(datos, cursoSel, periodoSel, materia, cfg = { semVerde: 80, semAmarillo: 60, minimo: 70 }, { autoprint = true } = {}) {
-  const { estudiante, promedio, competencias, asistencia, temas, observaciones } = datos
-  const fecha      = new Date().toLocaleDateString('es-DO', { day:'2-digit', month:'long', year:'numeric' })
-  // autoprint:false para el lote — printToPDF() falla si la página además llama a window.print() sola
-  const scriptImpresion = autoprint ? '<script>window.onload=()=>window.print()</script>' : ''
-  const promColor  = promedio === null ? '#888' : promedio >= cfg.semVerde ? '#1A6B3A' : promedio >= cfg.semAmarillo ? '#C84B00' : '#B71C1C'
-  const asistColor = asistencia.pct === null ? '#888' : asistencia.pct >= cfg.semVerde ? '#1A6B3A' : asistencia.pct >= cfg.semAmarillo ? '#C84B00' : '#B71C1C'
-
-  const compRows = competencias.map(c => {
-    const cc = c.promedio >= cfg.semVerde ? '#1A6B3A' : c.promedio >= cfg.semAmarillo ? '#C84B00' : '#B71C1C'
-    return `<tr>
-      <td style="padding:6px 10px;color:#555;font-size:12px">${c.nombre}</td>
-      <td style="padding:6px 10px;text-align:center;font-weight:800;color:${cc};font-size:13px">${c.promedio ?? '—'}</td>
-    </tr>`
-  }).join('')
-
-  const temaRows = temas.map((t, i) => {
-    const col = t.estado==='realizado' ? '#1A6B3A' : t.estado==='aplazado' ? '#C84B00' : '#AAA'
-    const lbl = t.estado==='realizado' ? 'Realizado' : t.estado==='aplazado' ? 'Aplazado' : 'Pendiente'
-    return `<tr style="background:${i%2===0?'#fff':'#FAFBFD'}">
-      <td style="padding:5px 10px;color:#888;font-size:11px">Sem. ${i+1}</td>
-      <td style="padding:5px 10px;color:#333;font-size:12px">${t.titulo}</td>
-      <td style="padding:5px 10px;color:${col};font-weight:700;font-size:11px">${lbl}</td>
-    </tr>`
-  }).join('')
-
-  const tipoLabel = { academico:'Académico', positivo:'Positivo', negativo:'Negativo', citacion:'Citación', conductual:'Conductual' }
-  const obsRows = observaciones.map(o => `
-    <div style="border-bottom:1px solid #EEE;padding:8px 0;margin-bottom:4px">
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
-        <span style="font-size:11px;font-weight:700;color:#555;background:#F0F0F0;padding:2px 8px;border-radius:10px">${tipoLabel[o.tipo]||o.tipo}</span>
-        <span style="font-size:11px;color:#AAA">${o.fecha}</span>
-      </div>
-      <div style="font-size:13px;color:#333;line-height:1.5">${o.texto}</div>
-    </div>`).join('')
-
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>Reporte ${estudiante.nombre_completo}</title>
-  <style>
-    body { font-family:'Segoe UI',sans-serif; margin:24px; color:#333; font-size:13px }
-    h1   { color:#1B3A6B; font-size:17px; margin:0 0 2px }
-    .sub { color:#888; font-size:12px; margin:0 0 18px }
-    .header-card { display:flex; align-items:center; gap:16px; background:#F7F9FC; border-radius:10px; padding:14px 18px; margin-bottom:16px; border:1px solid #DDE3ED }
-    .avatar { width:50px;height:50px;border-radius:50%;background:#EEEDFE;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#3C3489;flex-shrink:0 }
-    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px }
-    .card  { border:1px solid #DDE3ED; border-radius:8px; padding:14px 16px }
-    .card-title { font-size:10px;font-weight:700;color:#AAA;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px }
-    .asist-grid { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px }
-    .asist-item { background:#F7F9FC;border-radius:6px;padding:6px 10px }
-    .asist-item .lbl { font-size:10px;color:#888 }
-    .asist-item .val { font-size:16px;font-weight:800 }
-    table { border-collapse:collapse;width:100% }
-    thead th { background:#1B3A6B;color:#9BBFED;padding:7px 10px;font-size:11px;text-align:left }
-    tbody tr { border-bottom:1px solid #F0F4FA }
-    .footer { margin-top:16px;font-size:11px;color:#AAA;border-top:1px solid #EEE;padding-top:8px;text-align:right }
-    @media print { @page { margin:12mm } }
-  </style></head><body>
-  <h1>📋 Reporte Individual</h1>
-  <p class="sub">${cursoSel?.nombre} · ${periodoSel?.nombre}${periodoSel?.titulo?' — '+periodoSel.titulo:''} · Materia: ${materia?.nombre||'General'} · ${fecha}</p>
-
-  <div class="header-card">
-    <div class="avatar">${estudiante.nombre_completo.split(' ').slice(0,2).map(w=>w[0]).join('')}</div>
-    <div style="flex:1">
-      <div style="font-size:16px;font-weight:700;color:#1B3A6B">${estudiante.nombre_completo}</div>
-      <div style="font-size:12px;color:#888;margin-top:2px">No. lista: ${estudiante.numero_lista}</div>
-    </div>
-    <div style="text-align:right">
-      <div style="font-size:30px;font-weight:800;color:${promColor}">${promedio ?? '—'}</div>
-      <div style="font-size:11px;color:#888">promedio general</div>
-    </div>
-  </div>
-
-  <div class="grid2">
-    <div class="card">
-      <div class="card-title">Asistencia</div>
-      <div style="font-size:28px;font-weight:800;color:${asistColor}">${asistencia.pct !== null ? asistencia.pct+'%' : '—'}</div>
-      <div style="font-size:11px;color:#888;margin-bottom:8px">${asistencia.presentes} de ${asistencia.total} clases</div>
-      <div class="asist-grid">
-        <div class="asist-item"><div class="lbl">Presente</div><div class="val" style="color:#1A6B3A">${asistencia.presentes}</div></div>
-        <div class="asist-item"><div class="lbl">Ausente</div><div class="val" style="color:#B71C1C">${asistencia.ausentes}</div></div>
-        <div class="asist-item"><div class="lbl">Tardanza</div><div class="val" style="color:#C84B00">${asistencia.tardanzas}</div></div>
-        <div class="asist-item"><div class="lbl">Excusado</div><div class="val" style="color:#555">${asistencia.excusados}</div></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">Calificaciones por competencia</div>
-      ${competencias.length===0
-        ? '<p style="color:#AAA;font-size:12px">Sin calificaciones registradas.</p>'
-        : `<table><tbody>${compRows}</tbody></table>`}
-    </div>
-  </div>
-
-  <div class="card" style="margin-bottom:14px">
-    <div class="card-title">Temas del período</div>
-    ${temas.length===0
-      ? '<p style="color:#AAA;font-size:12px">Sin temas registrados.</p>'
-      : `<table><thead><tr><th style="width:60px">Semana</th><th>Tema</th><th style="width:80px">Estado</th></tr></thead><tbody>${temaRows}</tbody></table>`}
-  </div>
-
-  ${observaciones.length > 0 ? `
-  <div class="card">
-    <div class="card-title">Cuaderno anecdótico (${observaciones.length} observaciones)</div>
-    ${obsRows}
-  </div>` : ''}
-
-  <div class="footer">${estudiante.nombre_completo} · ${cursoSel?.nombre} · ${periodoSel?.nombre} · ${fecha}</div>
-  ${scriptImpresion}
-  </body></html>`
-
-  return html
+  abrirVentanaImpresion(construirHTMLGrupal(datos, cursoSel, periodoSel, materia))
 }
 
 function exportarPDFIndividual(datos, cursoSel, periodoSel, materia, cfg) {
-  const html = construirHTMLIndividual(datos, cursoSel, periodoSel, materia, cfg)
-  const win  = window.open('', '_blank')
-  if (!win) {
-    alert('No se pudo abrir la ventana de impresión. Verifica que el navegador no esté bloqueando ventanas emergentes.')
-    return
-  }
-  win.document.write(html)
-  win.document.close()
+  abrirVentanaImpresion(construirHTMLIndividual(datos, cursoSel, periodoSel, materia, cfg))
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -595,7 +369,8 @@ export default function Reportes({ anio, materia }) {
   const [lotePeriodoId, setLotePeriodoId] = useState(null)
   const [loteGenerando, setLoteGenerando] = useState(false)
   const [loteProgreso,  setLoteProgreso]  = useState({ done: 0, total: 0 })
-  const [loteToast,     setLoteToast]     = useState(null) // { msg, carpeta, leaving }
+  const [loteIncluirObs, setLoteIncluirObs] = useState(false)
+  const [loteToast,     setLoteToast]     = useState(null) // { msg, ruta, boton, leaving }
   const modalLoteT   = useModalTransition(modalLote)
   const loteToastGen = useRef(0)
 
@@ -723,12 +498,13 @@ export default function Reportes({ anio, materia }) {
     setLoteGrado('')
     setLoteSecciones([])
     setLotePeriodoId(periodoSel?.id || null)
+    setLoteIncluirObs(false)
     setModalLote(true)
   }
 
-  function mostrarLoteToast(msg, carpeta) {
+  function mostrarLoteToast(msg, ruta, boton = '📂 Abrir carpeta') {
     const gen = ++loteToastGen.current
-    setLoteToast({ msg, carpeta, leaving: false })
+    setLoteToast({ msg, ruta, boton, leaving: false })
     setTimeout(() => { if (loteToastGen.current === gen) setLoteToast(t => t && ({ ...t, leaving: true })) }, 5000)
     setTimeout(() => { if (loteToastGen.current === gen) setLoteToast(null) }, 5200)
   }
@@ -742,44 +518,39 @@ export default function Reportes({ anio, materia }) {
     setLoteGenerando(true)
     setLoteProgreso({ done: 0, total: 0 })
 
-    const items = []
-    for (const curso of cursosSel) {
-      const datosG = await window.api.invoke('get-reporte-grupal', curso.id, periodoObj.id, materia?.id || null)
-      items.push({
-        html:     construirHTMLGrupal(datosG, curso, periodoObj, materia, { autoprint: false }),
-        filename: `${curso.grado}${curso.seccion}_Grupal.pdf`,
-      })
-      for (const est of datosG.estudiantes) {
-        const datosI = await window.api.invoke('get-reporte-individual', est.id, curso.id, periodoObj.id, materia?.id || null)
-        items.push({
-          html:     construirHTMLIndividual(datosI, curso, periodoObj, materia, datosG.config, { autoprint: false }),
-          filename: `${curso.grado}${curso.seccion}_${est.numero_lista}_${slug(est.nombre_completo)}.pdf`,
-        })
-      }
-    }
-
-    setLoteProgreso({ done: 0, total: items.length })
-    const unsub = window.api.on('lote-progreso', p => setLoteProgreso(p))
-
-    const seccionesLetras = cursosSel.map(c => c.seccion || c.nombre).join('-')
-    const fechaISO         = new Date().toISOString().slice(0, 10)
-    const carpetaSugerida  = `Reportes_${loteGrado}${seccionesLetras}_${periodoObj.nombre}_${fechaISO}`
-
     try {
-      const res = await window.api.invoke('generar-reportes-lote', { items, carpetaSugerida })
-      unsub()
+      const secciones = []
+      for (const curso of cursosSel) {
+        const grupal = await window.api.invoke('get-reporte-grupal', curso.id, periodoObj.id, materia?.id || null)
+        secciones.push({ curso, grupal, individuales: [] })
+      }
+      const total = secciones.reduce((n, s) => n + s.grupal.estudiantes.length, 0)
+      let done = 0
+      setLoteProgreso({ done, total })
+      for (const s of secciones) {
+        for (const est of s.grupal.estudiantes) {
+          s.individuales.push(await window.api.invoke('get-reporte-individual', est.id, s.curso.id, periodoObj.id, materia?.id || null))
+          setLoteProgreso({ done: ++done, total })
+        }
+      }
+
+      const html = construirHTMLLote({ secciones, periodo: periodoObj, materia, grado: loteGrado, incluirObs: loteIncluirObs })
+      const seccionesLetras = cursosSel.map(c => c.seccion || c.nombre).join('-')
+      const fechaISO        = new Date().toISOString().slice(0, 10)
+      const nombreSugerido  = `Reportes_${slug(loteGrado)}${slug(seccionesLetras)}_${slug(periodoObj.nombre)}_${fechaISO}.html`
+
+      const res = await window.api.invoke('guardar-reporte-html', html, nombreSugerido)
       setLoteGenerando(false)
       if (res.cancelado) return
       if (res.ok) {
         setModalLote(false)
-        mostrarLoteToast(`✅ ${res.count} PDFs generados en ${carpetaSugerida}`, res.carpeta)
+        mostrarLoteToast(`✅ Reporte generado — ${total} estudiante(s) en ${cursosSel.length} sección(es)`, res.ruta, '🌐 Abrir reporte')
       } else {
-        alert('Error generando los reportes: ' + (res.error || 'desconocido'))
+        alert('Error generando el reporte: ' + (res.error || 'desconocido'))
       }
     } catch (e) {
-      unsub()
       setLoteGenerando(false)
-      alert('Error generando los reportes: ' + e.message)
+      alert('Error generando el reporte: ' + e.message)
     }
   }
 
@@ -904,7 +675,7 @@ export default function Reportes({ anio, materia }) {
           <div className="modal-content" data-closing={modalLoteT.closing} style={{ background: '#fff', borderRadius: 14, padding: 28, width: 480, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 16px 48px #0004' }}>
             <h2 style={{ color: COLOR_BASE, marginBottom: 6, fontSize: 17 }}>📦 Generar reporte por lote</h2>
             <p style={{ color: '#888', fontSize: 12, marginBottom: 20 }}>
-              Genera el reporte grupal y el individual de cada estudiante de las secciones elegidas, todo en una carpeta nueva.
+              Genera un solo archivo HTML con el resumen grupal y el reporte de cada estudiante. Se abre en cualquier navegador, permite buscar y filtrar (van bien, límite, en riesgo) y desde ahí se imprime o guarda en PDF el reporte que se necesite.
             </p>
 
             <div style={{ marginBottom: 16 }}>
@@ -957,11 +728,21 @@ export default function Reportes({ anio, materia }) {
               </div>
             </div>
 
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 20, cursor: 'pointer', fontSize: 13, color: '#333' }}>
+              <input type="checkbox" checked={loteIncluirObs} onChange={e => setLoteIncluirObs(e.target.checked)} disabled={loteGenerando} style={{ marginTop: 2 }} />
+              <span>
+                Incluir cuaderno anecdótico
+                <span style={{ display: 'block', color: '#AAB4C4', fontSize: 11.5, marginTop: 2 }}>
+                  Quien reciba el archivo puede ver las observaciones de todos los estudiantes y pasarlas a los PDF que imprima.
+                </span>
+              </span>
+            </label>
+
             {loteGenerando ? (
               <div style={{ textAlign: 'center', padding: '10px 0' }}>
                 <div className="spinner" style={{ margin: '0 auto 10px' }} />
                 <div style={{ fontSize: 13, color: '#555' }}>
-                  {loteProgreso.total > 0 ? `Generando ${loteProgreso.done}/${loteProgreso.total} PDFs...` : 'Preparando...'}
+                  {loteProgreso.total > 0 ? `Preparando ${loteProgreso.done}/${loteProgreso.total} estudiantes...` : 'Preparando...'}
                 </div>
               </div>
             ) : (
@@ -1092,10 +873,10 @@ export default function Reportes({ anio, materia }) {
         <div className="toast" data-leaving={loteToast.leaving} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8, maxWidth: 360 }}>
           <span>{loteToast.msg}</span>
           <button
-            onClick={() => window.api.invoke('abrir-carpeta', loteToast.carpeta)}
+            onClick={() => window.api.invoke('abrir-carpeta', loteToast.ruta)}
             style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', color: '#fff', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700 }}
           >
-            📂 Abrir carpeta
+            {loteToast.boton}
           </button>
         </div>
       )}

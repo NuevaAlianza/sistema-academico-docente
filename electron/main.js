@@ -320,43 +320,20 @@ ipcMain.handle('guardar-csv-portal-ars', async (_, csvTexto, nombreSugerido) => 
   }
 });
 
-  // ── REPORTES: GENERAR LOTE (grupal + individuales, sin diálogo por archivo) ──
-  ipcMain.handle('generar-reportes-lote', async (event, { items, carpetaSugerida }) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: 'Elegir dónde guardar los reportes',
-      properties: ['openDirectory', 'createDirectory'],
+  // ── REPORTES: LOTE (un solo HTML con visor, búsqueda y filtros) ──────────
+  ipcMain.handle('guardar-reporte-html', async (_, html, nombreSugerido) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Guardar reporte por lote',
+      defaultPath: nombreSugerido,
+      filters: [{ name: 'Página web (HTML)', extensions: ['html'] }],
     });
-    if (canceled || filePaths.length === 0) return { cancelado: true };
-
-    const carpetaDestino = path.join(filePaths[0], carpetaSugerida);
-    fs.mkdirSync(carpetaDestino, { recursive: true });
-
-    const tmpDir = path.join(app.getPath('temp'), 'sd_reportes_lote_' + Date.now());
-    fs.mkdirSync(tmpDir, { recursive: true });
-
-    // Ventana oculta reutilizada secuencialmente: printToPDF() da el buffer
-    // directo, sin el diálogo de impresión nativo que sí abre window.print().
-    const win = new BrowserWindow({ show: false });
-    let done = 0;
-    const total = items.length;
-
+    if (canceled || !filePath) return { cancelado: true };
     try {
-      for (const item of items) {
-        const tmpFile = path.join(tmpDir, `tmp_${done}.html`);
-        fs.writeFileSync(tmpFile, item.html, 'utf-8');
-        await win.loadFile(tmpFile);
-        const buffer = await win.webContents.printToPDF({ printBackground: true, pageSize: 'Letter' });
-        fs.writeFileSync(path.join(carpetaDestino, item.filename), buffer);
-        fs.unlinkSync(tmpFile);
-        done++;
-        event.sender.send('lote-progreso', { done, total });
-      }
-    } finally {
-      win.destroy();
-      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}
+      fs.writeFileSync(filePath, html, 'utf-8');
+      return { ok: true, ruta: filePath };
+    } catch (e) {
+      return { ok: false, error: e.message };
     }
-
-    return { ok: true, carpeta: carpetaDestino, count: done };
   });
 
   ipcMain.handle('abrir-carpeta', (_, ruta) => {
