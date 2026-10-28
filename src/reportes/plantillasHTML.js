@@ -41,7 +41,49 @@ function indicadoresTexto(est, cfg) {
   if (est.asist_pct !== null && est.asist_pct < cfg.semAmarillo) inds.push('Asistencia baja')
   else if (est.asist_pct !== null && est.asist_pct < cfg.semVerde) inds.push('Asistencia irregular')
   if (inds.length === 0) inds.push('Satisfactorio')
+  const pend = (est.evidencias_pendientes || []).length
+  if (pend > 0) inds.push(`${pend} evidencia${pend > 1 ? 's' : ''} pendiente${pend > 1 ? 's' : ''}`)
   return inds.join(' · ')
+}
+
+// Registro por evidencias: quién debe qué (solo semanas ya iniciadas).
+function seccionPendientesGrupal(datos) {
+  const conPend = (datos.estudiantes || []).filter(e => (e.evidencias_pendientes || []).length > 0)
+  if (!datos.evidencias?.hay || conPend.length === 0) return ''
+  const filas = conPend.map((e, i) => `<tr style="background:${i % 2 ? '#FAFBFD' : '#fff'}">
+      <td style="padding:5px 10px;color:#999;font-weight:700;font-size:11px">${String(e.numero_lista).padStart(2, '0')}</td>
+      <td style="padding:5px 10px;font-weight:600;color:#1B3A6B;font-size:12px;white-space:nowrap">${escapeHtml(e.nombre_completo)}</td>
+      <td style="padding:5px 10px;font-size:11px;color:#555">${e.evidencias_pendientes.map(p => `<b>${escapeHtml(p.sesion)}</b> ${escapeHtml(p.nombre)}`).join(' · ')}</td>
+    </tr>`).join('')
+  return `
+  <h2 style="color:#C84B00;font-size:14px;margin:18px 0 4px">📋 Evidencias pendientes</h2>
+  <p style="color:#888;font-size:11px;margin:0 0 8px">Semanas en curso: ${escapeHtml(datos.evidencias.semanas_iniciadas.join(', '))}. Una semana con evidencias pendientes no cuenta en el promedio hasta completarse.</p>
+  <table><thead><tr><th style="width:36px">#</th><th>Estudiante</th><th>Le falta</th></tr></thead><tbody>${filas}</tbody></table>`
+}
+
+// Registro por evidencias: detalle de cada semana para el reporte individual.
+function seccionEvidenciasIndividual(evid) {
+  if (!evid || !evid.semanas || evid.semanas.length === 0) return ''
+  const filas = evid.semanas.map(s => {
+    const pend = s.estado === 'pendiente' || (s.iniciada && s.estado === 'vacia')
+    const nota = s.nota !== null ? `<b style="color:#1B3A6B">${s.nota}</b>` : pend ? '<b style="color:#C84B00">pendiente</b>' : '<span style="color:#AAA">sin evaluar</span>'
+    const items = s.items.map(it => {
+      const falta = it.puntos === null && s.iniciada
+      return `<span style="white-space:nowrap;${falta ? 'color:#C84B00;font-weight:700' : ''}">${escapeHtml(it.sesion)} ${escapeHtml(it.nombre)}: ${it.puntos === null ? '—' : it.puntos}/${it.max}</span>`
+    }).join(' · ')
+    return `<tr><td style="padding:5px 10px;font-size:12px;color:#1B3A6B;font-weight:600">${escapeHtml(s.actividad)}</td>
+      <td style="padding:5px 10px;font-size:11px;color:#555;line-height:1.5">${items}</td>
+      <td style="padding:5px 10px;text-align:center;font-size:12px">${nota}</td></tr>`
+  }).join('')
+  const aviso = evid.pendientes.length
+    ? `<p style="background:#FFF8E1;border:1px solid #FAC775;border-radius:6px;padding:6px 10px;font-size:12px;color:#854F0B;margin:0 0 8px">Le falta entregar: ${evid.pendientes.map(p => `<b>${escapeHtml(p.sesion)}</b> ${escapeHtml(p.nombre)}`).join(' · ')}</p>`
+    : ''
+  return `
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title">Evidencias por semana</div>
+    ${aviso}
+    <table><thead><tr><th style="width:30%">Semana</th><th>Evidencias (puntos obtenidos / puntos)</th><th style="width:80px;text-align:center">Nota</th></tr></thead><tbody>${filas}</tbody></table>
+  </div>`
 }
 
 // También la usa la lista filtrada del visor del lote, para que se vea igual que el grupal
@@ -125,6 +167,7 @@ export function construirHTMLGrupal(datos, cursoSel, periodoSel, materia, { auto
     </tr></thead>
     <tbody>${filas}</tbody>
   </table>
+  ${seccionPendientesGrupal(datos)}
 
   <div class="footer">
     <span>${incluirObs ? '● = tiene observaciones en cuaderno anecdótico' : ''}</span>
@@ -232,6 +275,8 @@ export function construirHTMLIndividual(datos, cursoSel, periodoSel, materia, cf
         : `<table><tbody>${compRows}</tbody></table>`}
     </div>
   </div>
+
+  ${seccionEvidenciasIndividual(datos.evidencias)}
 
   <div class="card" style="margin-bottom:14px">
     <div class="card-title">Temas del período</div>

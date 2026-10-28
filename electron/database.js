@@ -968,6 +968,40 @@ deleteEstudiante(id) {
     return { completados };
   }
 
+  // Seguimiento de evidencias del curso en el período, para Reportes. Una semana cuenta
+  // como "iniciada" cuando ya hay algún punto anotado; solo ahí lo que falta es pendiente
+  // (las semanas que todavía no llegan no aparecen como deudas de todos).
+  _seguimientoEvidencias(cursoId, periodoId, materiaId) {
+    const acts = materiaId
+      ? this.db.prepare("SELECT * FROM actividades a WHERE curso_id=? AND periodo_id=? AND materia_id=? AND EXISTS (SELECT 1 FROM actividad_evidencias ev WHERE ev.actividad_id=a.id) ORDER BY a.id").all(cursoId, periodoId, materiaId)
+      : this.db.prepare("SELECT * FROM actividades a WHERE curso_id=? AND periodo_id=? AND EXISTS (SELECT 1 FROM actividad_evidencias ev WHERE ev.actividad_id=a.id) ORDER BY a.id").all(cursoId, periodoId);
+    const califStmt = this.db.prepare("SELECT estudiante_id, nota FROM calificaciones WHERE actividad_id=?");
+    return acts.map(act => {
+      const evidencias = this._evidenciasDe(act.id);
+      const puntos = this._puntosPorEstudiante(evidencias);
+      const califs = {};
+      for (const c of califStmt.all(act.id)) califs[c.estudiante_id] = c;
+      return { act, corto: (act.nombre.split(' — ')[0] || act.nombre).trim(), evidencias, puntos, califs, iniciada: Object.keys(puntos).length > 0 };
+    });
+  }
+
+  _evidenciasDeEstudiante(seg, estudianteId) {
+    const semanas = [], pendientes = [];
+    for (const s of seg) {
+      const p = s.puntos[estudianteId] || {};
+      const calif = s.califs[estudianteId];
+      const estado = this._estadoEvidencias(s.evidencias, p, calif);
+      semanas.push({
+        actividad: s.act.nombre, corto: s.corto, peso: s.act.peso, iniciada: s.iniciada, estado,
+        nota: calif && calif.nota != null ? calif.nota : null,
+        items: s.evidencias.map(e => ({ competencia: e.competencia, nombre: e.nombre, sesion: e.sesion, max: e.puntos, puntos: p[e.id] ?? null })),
+      });
+      if (s.iniciada && (estado === 'pendiente' || estado === 'vacia'))
+        for (const e of s.evidencias) if (p[e.id] == null) pendientes.push({ semana: s.corto, sesion: e.sesion, nombre: e.nombre });
+    }
+    return { semanas, pendientes };
+  }
+
   // Datos para la planilla (una actividad o todo el período) y para listar pendientes.
   getPlanillaEvidencias(cursoId, periodoId, materiaId, actividadId) {
     const acts = actividadId
@@ -1364,6 +1398,7 @@ deleteEstudiante(id) {
       : "SELECT COUNT(*) as n FROM temas WHERE curso_id=? AND periodo_id=? AND estado='realizado'";
  
     const tParamsBase = materiaId ? [cursoId, periodoId, materiaId] : [cursoId, periodoId];
+    const segEvid = this._seguimientoEvidencias(cursoId, periodoId, materiaId);
     const temasTotal     = (this.db.prepare(temasQ).get(...tParamsBase) || {n:0}).n;
     const temasRealizados= (this.db.prepare(realQ).get(...tParamsBase) || {n:0}).n;
  
@@ -1420,6 +1455,7 @@ deleteEstudiante(id) {
         asist_excusados: excusados,
         obs_count:       obsCount,
         en_riesgo:       enRiesgo,
+        evidencias_pendientes: this._evidenciasDeEstudiante(segEvid, est.id).pendientes,
       };
     });
  
@@ -1427,6 +1463,7 @@ deleteEstudiante(id) {
       temas_total:      temasTotal,
       temas_realizados: temasRealizados,
       estudiantes:      filas,
+      evidencias:       { hay: segEvid.length > 0, semanas_iniciadas: segEvid.filter(s => s.iniciada).map(s => s.corto) },
       config:           { minimo, semVerde, semAmarillo: Number(cfg.semaforo_amarillo || 60) },
     };
   }
@@ -1615,6 +1652,7 @@ deleteEstudiante(id) {
       asistencia,
       temas,
       observaciones,
+      evidencias:   this._evidenciasDeEstudiante(this._seguimientoEvidencias(cursoId, periodoId, materiaId), estudianteId),
     };
   }
 }

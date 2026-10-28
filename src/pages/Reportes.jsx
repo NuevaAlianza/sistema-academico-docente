@@ -41,8 +41,13 @@ function indicadores(est, cfg = { minimo: 70, semVerde: 80, semAmarillo: 60 }) {
     else if (est.asist_pct < cfg.semVerde) items.push({ bg: '#FAEEDA', col: '#854F0B', label: 'Asistencia irregular' })
   }
   if (items.length === 0) items.push({ bg: '#EAF3DE', col: '#3B6D11', label: 'Satisfactorio' })
+  const pend = est.evidencias_pendientes || []
+  if (pend.length > 0) items.push({ bg: '#FDECD7', col: '#C84B00', label: `${pend.length} evidencia${pend.length > 1 ? 's' : ''} pendiente${pend.length > 1 ? 's' : ''}` })
   return items
 }
+
+// "S2-2 Exposición de la profesión…" para listas cortas de pendientes.
+const textoPendiente = p => `${p.sesion} ${p.nombre}`
 
 function abrirVentanaImpresion(html) {
   const win = window.open('', '_blank')
@@ -124,6 +129,31 @@ function VistaGrupal({ datos, cursoSel, periodoSel, materia, onVerEstudiante, on
           <span>{sinCalif.length} estudiante{sinCalif.length > 1 ? 's' : ''} sin calificaciones registradas en este período. Ingresa las notas para que el reporte refleje el estado real.</span>
         </div>
       )}
+
+      {/* EVIDENCIAS PENDIENTES (registro por evidencias) */}
+      {(() => {
+        const conPend = estudiantes.filter(e => (e.evidencias_pendientes || []).length > 0)
+        if (!datos.evidencias?.hay || conPend.length === 0) return null
+        return (
+          <div style={{ ...S.card, padding: '14px 18px', borderLeft: '3px solid #C84B00' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 700, color: '#C84B00', fontSize: 14 }}>📋 Evidencias pendientes</span>
+              <span style={{ fontSize: 12, color: '#888' }}>
+                {conPend.length} estudiante{conPend.length > 1 ? 's' : ''} · semanas en curso: {datos.evidencias.semanas_iniciadas.join(', ')} · esas semanas no cuentan en su promedio hasta completarlas
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+              {conPend.map(e => (
+                <div key={e.id} onClick={() => onVerEstudiante(e.id)} style={{ display: 'flex', gap: 10, fontSize: 12, cursor: 'pointer', padding: '3px 0', borderBottom: '1px solid #F4F6FA' }}>
+                  <span style={{ color: '#AAB4C4', fontWeight: 600, minWidth: 22 }}>{e.numero_lista}</span>
+                  <span style={{ fontWeight: 600, color: COLOR_BASE, minWidth: 220 }}>{e.nombre_completo}</span>
+                  <span style={{ color: '#555' }}>{e.evidencias_pendientes.map(textoPendiente).join(' · ')}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* TABLA */}
       <div style={{ ...S.card, padding: 0, overflow: 'hidden' }}>
@@ -300,6 +330,40 @@ function VistaIndividual({ datos, materia, onExportar, cfg }) {
           }
         </div>
       </div>
+
+      {/* EVIDENCIAS POR SEMANA */}
+      {datos.evidencias?.semanas?.length > 0 && (
+        <div style={{ ...S.card, marginBottom: 14 }}>
+          <div style={S.label}>Evidencias por semana</div>
+          {datos.evidencias.pendientes.length > 0 && (
+            <div style={{ background: '#FFF8E1', border: '1px solid #FAC775', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12, color: '#854F0B' }}>
+              ⚠️ Le falta entregar: {datos.evidencias.pendientes.map(textoPendiente).join(' · ')}
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 8 }}>
+            {datos.evidencias.semanas.map(s => {
+              const est = s.nota !== null ? { bg: '#F7F9FC', txt: semaforo(s.nota, cfgLocal.semVerde, cfgLocal.semAmarillo).col, label: s.nota }
+                : s.estado === 'pendiente' || (s.iniciada && s.estado === 'vacia') ? { bg: '#FFF8E1', txt: '#C84B00', label: 'pendiente' }
+                : { bg: '#F7F9FC', txt: '#AAB4C4', label: 'sin evaluar' }
+              return (
+                <div key={s.actividad} style={{ background: est.bg, borderRadius: 8, padding: '8px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: COLOR_BASE, flex: 1 }}>{s.actividad}</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: est.txt }}>{est.label}</span>
+                  </div>
+                  {s.items.map((it, j) => (
+                    <div key={j} style={{ display: 'flex', gap: 6, fontSize: 11, color: it.puntos === null && s.iniciada ? '#C84B00' : '#555' }}>
+                      <span style={{ color: '#AAB4C4', minWidth: 30 }}>{it.sesion}</span>
+                      <span style={{ flex: 1 }}>{it.nombre}</span>
+                      <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{it.puntos === null ? '—' : it.puntos} / {it.max}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* TEMAS */}
       <div style={{ ...S.card, marginBottom: 14 }}>
