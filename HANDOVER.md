@@ -3,7 +3,7 @@
 
 **Versión:** 1.10.0
 **Fecha:** 2026-10-28
-**Estado:** v1.10.0 — curso/período activos para toda la app + registro por evidencias desde el plan (actividades, temas, tabla por evidencias, planillas, pendientes en Reportes). **Esta PC es de pruebas**; la de uso diario recibe cambios instalando el `.exe`. Antes de instalar allá: revisar si los datos del año actual quedaron sin materia (pendiente de decisión), cargar fechas de P3/P4. Pendientes viejos: rotar `service_role` de Portal-Ars, limpiar backup de prueba en Supabase, traslado de estudiantes (sin decisión). Nada pusheado desde v1.7.0.
+**Estado:** v1.10.0 — curso/período activos para toda la app + registro por evidencias desde el plan (actividades, temas, tabla por evidencias, planillas, pendientes en Reportes). `.exe` generado en `release/` (verificado: versión 1.10.0 y código nuevo dentro del asar). Actualización probada sobre 3 backups de distintas épocas (sep ~1.7, 2-oct ~1.9.0, 28-oct 1.9.1), cada uno en su proceso: datos existentes idénticos fila por fila; solo se agregan tablas vacías. **Esta PC es de pruebas**; la de uso diario recibe cambios instalando el `.exe`. Antes de instalar allá: revisar si los datos del año actual quedaron sin materia (pendiente de decisión), cargar fechas de P3/P4. Pendientes viejos: rotar `service_role` de Portal-Ars, limpiar backup de prueba en Supabase, traslado de estudiantes (sin decisión). Nada pusheado desde v1.7.0.
 
 ---
 
