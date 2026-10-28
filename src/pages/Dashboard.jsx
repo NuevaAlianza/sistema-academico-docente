@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { usePeriodoActivo } from '../hooks/useSeleccionActiva'
 
-export default function Dashboard({ anio, materia }) {
+export default function Dashboard({ anio, materia, onCambiarCurso, periodoActivoId, onCambiarPeriodo }) {
   const materiaId = materia?.id || null
   const [stats,         setStats]         = useState(null)
   const [riesgo,        setRiesgo]        = useState([])
   const [semaforo,      setSemaforo]      = useState([])
   const [periodos,      setPeriodos]      = useState([])
-  const [periodoSel,    setPeriodoSel]    = useState(null)
+  const [periodoSel,    setPeriodoSel]    = usePeriodoActivo(periodos, periodoActivoId, onCambiarPeriodo)
   const [cfg,           setCfg]           = useState({})
   const [cargando,      setCargando]      = useState(true)
   const nav = useNavigate()
@@ -21,8 +22,6 @@ export default function Dashboard({ anio, materia }) {
       window.api.invoke('get-periodos', anio.id),
     ]).then(([s, c, ps]) => {
       setStats(s); setCfg(c); setPeriodos(ps)
-      const activo = ps.find(p => p.estado === 'abierto') || ps[ps.length - 1]
-      if (activo) setPeriodoSel(activo)
     })
   }, [anio, materia])
 
@@ -127,7 +126,7 @@ export default function Dashboard({ anio, materia }) {
                 const pA = conNota>0?Math.round(curso.amarillo/conNota*100):0
                 const pR = conNota>0?Math.round(curso.rojo/conNota*100):0
                 return (
-                  <div key={curso.id} onClick={() => nav('/calificaciones')} style={{
+                  <div key={curso.id} onClick={() => { onCambiarCurso && onCambiarCurso(curso.id); nav('/calificaciones') }} style={{
                     padding:'10px 16px', cursor:'pointer', borderBottom:idx<semaforo.length-1?'1px solid #F0F4FA':'none',
                     borderLeft:`3px solid ${curso.color}`,
                   }}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
 import { useModalTransition } from '../hooks/useModalTransition'
+import { useCursoActivo } from '../hooks/useSeleccionActiva'
 
 const VACIO = { nombre:'', codigo:'', numero:'' }
 const COLORES_PER = ['#2563A8','#00695C','#5C2D91','#1A6B3A']
@@ -12,11 +12,10 @@ const TIPOS_OBS = [
   { key:'general',   label:'Nota rápida', color:'#7A5C00', bg:'#FFF8D6' },
 ]
 
-export default function Estudiantes({ anio, materia }) {
-  const location  = useLocation()
+export default function Estudiantes({ anio, materia, cursoActivoId, onCambiarCurso }) {
   const materiaId = materia?.id || null
   const [cursos,          setCursos]          = useState([])
-  const [cursoSel,        setCursoSel]        = useState(null)
+  const [cursoSel,        setCursoSel]        = useCursoActivo(cursos, cursoActivoId, onCambiarCurso)
   const [estudiantes,     setEstudiantes]     = useState([])
   const [busqueda,        setBusqueda]        = useState('')
   const [verRetirados,    setVerRetirados]    = useState(false)
@@ -50,24 +49,12 @@ export default function Estudiantes({ anio, materia }) {
 
   useEffect(() => {
     if (!anio) return
-    window.api.invoke('get-cursos', anio.id).then(c => {
-      setCursos(c)
-      if (c.length > 0) setCursoSel(c[0])
-    })
+    window.api.invoke('get-cursos', anio.id).then(setCursos)
   }, [anio])
 
   useEffect(() => {
-    if (cursos.length === 0) return
-    const params = new URLSearchParams(location.search)
-    const navId  = parseInt(params.get('cursoId') || '0')
-    if (!navId) return
-    const target = cursos.find(c => c.id === navId)
-    if (target) setCursoSel(target)
-  }, [cursos, location.search])
-
-  useEffect(() => {
     if (cursoSel) { setBusqueda(''); cargarEstudiantes() }
-  }, [cursoSel, verRetirados])
+  }, [cursoSel?.id, verRetirados])
 
   function cargarEstudiantes() {
     const ipc = verRetirados ? 'get-estudiantes-todos' : 'get-estudiantes'

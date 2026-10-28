@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
 import { useModalTransition } from '../hooks/useModalTransition'
+import { useCursoActivo } from '../hooks/useSeleccionActiva'
 
 const ESTADOS = [
   { key:'presente', label:'P', titulo:'Presente', bg:'#D6EEE0', color:'#1A6B3A', borde:'#A8D4B8' },
@@ -76,11 +76,10 @@ function BadgePct({ pct }) {
   )
 }
 
-export default function Asistencia({ anio, materia }) {
-  const location = useLocation()
+export default function Asistencia({ anio, materia, cursoActivoId, onCambiarCurso }) {
   const materiaId = materia?.id || null
   const [cursos,        setCursos]        = useState([])
-  const [cursoSel,      setCursoSel]      = useState(null)
+  const [cursoSel,      setCursoSel]      = useCursoActivo(cursos, cursoActivoId, onCambiarCurso)
   const [diasClase,     setDiasClase]     = useState([])
   const [modo,          setModo]          = useState('dia')
   const [fecha,         setFecha]         = useState(fechaHoy())
@@ -103,7 +102,6 @@ export default function Asistencia({ anio, materia }) {
   if (!anio) return
   window.api.invoke('get-cursos', anio.id).then(async c => {
     setCursos(c)
-    if (c.length > 0) setCursoSel(c[0])
     const mapa = {}
     await Promise.all(c.map(async curso => {
       const dias = await window.api.invoke('get-dias-curso', curso.id, materiaId)
@@ -113,17 +111,6 @@ export default function Asistencia({ anio, materia }) {
   })
 }, [anio, materia])
 
-
- 
-// ← Agrega esto DESPUÉS del useEffect anterior:
-useEffect(() => {
-  if (cursos.length === 0) return
-  const params = new URLSearchParams(location.search)
-  const navId  = parseInt(params.get('cursoId') || '0')
-  if (!navId) return
-  const target = cursos.find(c => c.id === navId)
-  if (target) setCursoSel(target)
-}, [cursos, location.search])
 
   useEffect(() => {
     if (!cursoSel) return

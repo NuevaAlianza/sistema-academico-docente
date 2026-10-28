@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { useModalTransition } from '../hooks/useModalTransition'
 import HistorialParticipacion, { FASES, fmtPts, colorPts } from '../components/HistorialParticipacion'
+import { usePeriodoActivo } from '../hooks/useSeleccionActiva'
 
 // ── Semáforo ──────────────────────────────────────────────────
 const SEM = {
@@ -37,7 +38,7 @@ const TEMA_EST = {
   aplazado:   { icon:'🔄', label:'Aplazado',  color:'#1E40AF' },
 }
 
-export default function CursoEspacio({ anio, materia }) {
+export default function CursoEspacio({ anio, materia, cursoActivoId, onCambiarCurso, periodoActivoId, onCambiarPeriodo }) {
   const { cursoId }  = useParams()
   const location     = useLocation()
   const nav          = useNavigate()
@@ -48,8 +49,14 @@ export default function CursoEspacio({ anio, materia }) {
   // ── Estado general ────────────────────────────────────────
   const [curso,        setCurso]        = useState(location.state?.curso || null)
   const [periodos,     setPeriodos]     = useState([])
-  const [perSel,       setPerSel]       = useState(null)
-  const [toast,        setToast]        = useState(null)
+  const [perSel,       setPerSel]       = usePeriodoActivo(periodos, periodoActivoId, onCambiarPeriodo)
+
+  // Entrar al espacio de un curso lo convierte en el curso activo de toda la app.
+  useEffect(() => {
+    if (id && id !== cursoActivoId && onCambiarCurso) onCambiarCurso(id)
+  }, [id])
+
+  const [toast,       setToast]        = useState(null)
   const [tabActivo,    setTabActivo]    = useState('clase')
   const autoSaveTimer = useRef(null)
 
@@ -128,11 +135,7 @@ export default function CursoEspacio({ anio, materia }) {
     window.api.invoke('get-curso-anotaciones', id, materiaId).then(setAnotaciones)
 
     // Períodos
-    window.api.invoke('get-periodos', anio.id).then(ps => {
-      setPeriodos(ps)
-      const abierto = ps.find(p => p.estado === 'abierto') || ps[ps.length - 1]
-      if (abierto) setPerSel(abierto)
-    })
+    window.api.invoke('get-periodos', anio.id).then(setPeriodos)
   }, [id, materiaId, anio])
 
   // ── Tema del día y participación cuando cambia período ────
@@ -301,7 +304,8 @@ export default function CursoEspacio({ anio, materia }) {
 
   // Navegación
   function irA(path) {
-    nav(`${path}?cursoId=${id}`, { state: { cursoId: id, curso } })
+    if (onCambiarCurso) onCambiarCurso(id)
+    nav(path)
   }
 
   // Stats rápidos

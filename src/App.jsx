@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
@@ -12,6 +12,7 @@ import Configuracion from './pages/Configuracion'
 import Backup from './pages/Backup'
 import CursoEspacio from './pages/CursoEspacio'
 import Reportes from './pages/Reportes'
+import { periodoPorFecha } from './hooks/useSeleccionActiva'
 
 export default function App() {
   const [anio,     setAnio]     = useState(null)
@@ -19,6 +20,8 @@ export default function App() {
   const [materias, setMaterias] = useState([])
   const [cargando, setCargando] = useState(true)
   const [sinAnio,  setSinAnio]  = useState(false)
+  const [cursoActivoId,   setCursoActivoId]   = useState(null)
+  const [periodoActivoId, setPeriodoActivoId] = useState(null)
 
   useEffect(() => { cargarAnio() }, [])
 
@@ -29,6 +32,7 @@ export default function App() {
         setAnio(a)
         setSinAnio(false)
         await cargarMaterias(a)
+        await cargarSeleccion(a)
       } else {
         setSinAnio(true)
       }
@@ -56,6 +60,29 @@ export default function App() {
       console.error('Error cargando materias:', err)
     }
   }
+
+  // El curso se recuerda entre sesiones; el período no: al abrir la app se toma el de la
+  // fecha de hoy, para no seguir anotando en el período anterior cuando empieza uno nuevo.
+  async function cargarSeleccion(anioActivo) {
+    try {
+      const [cursos, periodos, cfg] = await Promise.all([
+        window.api.invoke('get-cursos', anioActivo.id),
+        window.api.invoke('get-periodos', anioActivo.id),
+        window.api.invoke('get-config'),
+      ])
+      const guardado = cfg.curso_activo_id ? Number(cfg.curso_activo_id) : null
+      const curso = cursos.find(c => c.id === guardado) || cursos[0] || null
+      setCursoActivoId(curso ? curso.id : null)
+      setPeriodoActivoId(periodoPorFecha(periodos)?.id ?? null)
+    } catch (err) {
+      console.error('Error cargando curso/período activo:', err)
+    }
+  }
+
+  const cambiarCurso = useCallback(async id => {
+    setCursoActivoId(id)
+    await window.api.invoke('set-config', 'curso_activo_id', String(id))
+  }, [])
 
   async function recargarMaterias() {
     if (!anio) return
@@ -115,7 +142,11 @@ export default function App() {
     )
   }
 
-  const commonProps = { anio, materia, materias }
+  const commonProps = {
+    anio, materia, materias,
+    cursoActivoId, onCambiarCurso: cambiarCurso,
+    periodoActivoId, onCambiarPeriodo: setPeriodoActivoId,
+  }
 
   return (
     <HashRouter>
@@ -126,6 +157,10 @@ export default function App() {
             materia={materia}
             materias={materias}
             onCambiarMateria={cambiarMateria}
+            cursoActivoId={cursoActivoId}
+            onCambiarCurso={cambiarCurso}
+            periodoActivoId={periodoActivoId}
+            onCambiarPeriodo={setPeriodoActivoId}
           />
         }>
           <Route index element={<Navigate to="/dashboard" replace />} />

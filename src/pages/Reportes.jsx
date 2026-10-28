@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useModalTransition } from '../hooks/useModalTransition'
+import { useCursoActivo, usePeriodoActivo } from '../hooks/useSeleccionActiva'
 import { slug, construirHTMLGrupal, construirHTMLIndividual, construirHTMLLote } from '../reportes/plantillasHTML'
 
 const COLOR_BASE = '#1B3A6B'
@@ -351,11 +352,11 @@ function VistaIndividual({ datos, materia, onExportar, cfg }) {
 // ──────────────────────────────────────────────────────────────────────────
 //  COMPONENTE PRINCIPAL
 // ──────────────────────────────────────────────────────────────────────────
-export default function Reportes({ anio, materia }) {
+export default function Reportes({ anio, materia, cursoActivoId, onCambiarCurso, periodoActivoId, onCambiarPeriodo }) {
   const [periodos,    setPeriodos]    = useState([])
   const [cursos,      setCursos]      = useState([])
-  const [cursoSel,    setCursoSel]    = useState(null)
-  const [periodoSel,  setPeriodoSel]  = useState(null)
+  const [cursoSel,    setCursoSel]    = useCursoActivo(cursos, cursoActivoId, onCambiarCurso)
+  const [periodoSel,  setPeriodoSel]  = usePeriodoActivo(periodos, periodoActivoId, onCambiarPeriodo)
   const [vista,       setVista]       = useState('grupal')   // 'grupal' | 'individual'
   const [datosGrupal, setDatosGrupal] = useState(null)
   const [estSel,      setEstSel]      = useState(null)
@@ -392,12 +393,6 @@ export default function Reportes({ anio, materia }) {
     ]).then(([c, p]) => {
       setCursos(c)
       setPeriodos(p)
-      if (c.length > 0) setCursoSel(c[0])
-      if (p.length > 0) {
-        // Seleccionar el período más reciente con estado 'abierto', o el último
-        const abierto = p.filter(x => x.estado === 'abierto').pop() || p[p.length - 1]
-        setPeriodoSel(abierto)
-      }
     })
   }, [anio])
 

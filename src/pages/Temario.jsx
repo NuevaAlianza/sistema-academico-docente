@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import PlanClase from './PlanClase'
-import { useLocation } from 'react-router-dom'
 import { useModalTransition } from '../hooks/useModalTransition'
+import { useCursoActivo, usePeriodoActivo } from '../hooks/useSeleccionActiva'
 // Carga imágenes locales via IPC (evita bloqueo de file:// en Electron)
 function ImgLocal({ ruta, style, onClick }) {
   const [src, setSrc] = React.useState(null)
@@ -31,13 +31,12 @@ const EXT_IMG=['jpg','jpeg','png','gif','webp']
 const esImagen=n=>EXT_IMG.includes((n||'').split('.').pop().toLowerCase())
 function hoy(){const d=new Date();return`${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`}
 
-export default function Temario({anio,materia}){
-  const location = useLocation()
+export default function Temario({anio,materia,cursoActivoId,onCambiarCurso,periodoActivoId,onCambiarPeriodo}){
   const materiaId=materia?.id||null
   const [cursos,     setCursos]     =useState([])
   const [periodos,   setPeriodos]   =useState([])
-  const [cursoSel,   setCursoSel]   =useState(null)
-  const [perSel,     setPerSel]     =useState(null)
+  const [cursoSel,   setCursoSel]   =useCursoActivo(cursos,cursoActivoId,onCambiarCurso)
+  const [perSel,     setPerSel]     =usePeriodoActivo(periodos,periodoActivoId,onCambiarPeriodo)
   const [temas,      setTemas]      =useState([])
   const [nuevoTema,  setNuevoTema]  =useState('')
   const [toast,      setToast]      =useState(null)
@@ -74,19 +73,8 @@ export default function Temario({anio,materia}){
       window.api.invoke('get-periodos', anio.id),
     ]).then(([c, p]) => {
       setCursos(c); setPeriodos(p)
-      if (c.length > 0) setCursoSel(c[0])
-      if (p.length > 0) setPerSel(p[0])
     })
   }, [anio])
-
-  useEffect(() => {
-    if (cursos.length === 0) return
-    const params = new URLSearchParams(location.search)
-    const navId  = parseInt(params.get('cursoId') || '0')
-    if (!navId) return
-    const target = cursos.find(c => c.id === navId)
-    if (target) setCursoSel(target)
-  }, [cursos, location.search])
 
   useEffect(()=>{
     if(cursoSel&&perSel) window.api.invoke('get-temas',cursoSel.id,perSel.id,materiaId).then(setTemas)

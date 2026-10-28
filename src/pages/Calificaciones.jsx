@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
 import { useModalTransition } from '../hooks/useModalTransition'
+import { useCursoActivo, usePeriodoActivo } from '../hooks/useSeleccionActiva'
 import HistorialParticipacion, { fmtPts, colorPts } from '../components/HistorialParticipacion'
 
 const COMPETENCIAS = [
@@ -19,14 +19,12 @@ const TIPO_ICONO = { Tarea:'📝', Exposicion:'🎤', Proyecto:'🔬', Examen:'�
 const COLORES_PER = ['#2563A8','#00695C','#5C2D91','#1A6B3A']
 const VACIO = { nombre:'', tipo:'Tarea', competencia:'Comunicativa', fecha:'', peso:'10', modo:'simple', competencias_multi:[], temaIds:[] }
 
-export default function Calificaciones({ anio, materia }) {
-  const location = useLocation()
-  const cursoIdPresel = location.state?.cursoId || null
+export default function Calificaciones({ anio, materia, cursoActivoId, onCambiarCurso, periodoActivoId, onCambiarPeriodo }) {
   const materiaId = materia?.id || null
   const [cursos,      setCursos]      = useState([])
   const [periodos,    setPeriodos]    = useState([])
-  const [cursoSel,    setCursoSel]    = useState(null)
-  const [perSel,      setPerSel]      = useState(null)
+  const [cursoSel,    setCursoSel]    = useCursoActivo(cursos, cursoActivoId, onCambiarCurso)
+  const [perSel,      setPerSel]      = usePeriodoActivo(periodos, periodoActivoId, onCambiarPeriodo)
   const [actividades, setActividades] = useState([])
   const [actSel,      setActSel]      = useState(null)
   const [califs,      setCalifs]      = useState([])
@@ -67,20 +65,8 @@ export default function Calificaciones({ anio, materia }) {
     window.api.invoke('get-periodos', anio.id),
   ]).then(([c, p]) => {
     setCursos(c); setPeriodos(p)
-    if (c.length > 0) setCursoSel(c[0])
-    if (p.length > 0) setPerSel(p[0])
   })
 }, [anio])
- 
-// ← Agrega esto DESPUÉS:
-useEffect(() => {
-  if (cursos.length === 0) return
-  const params = new URLSearchParams(location.search)
-  const navId  = parseInt(params.get('cursoId') || '0')
-  if (!navId) return
-  const target = cursos.find(c => c.id === navId)
-  if (target) setCursoSel(target)
-}, [cursos, location.search])
 
   
 

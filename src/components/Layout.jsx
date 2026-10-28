@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useModalTransition } from '../hooks/useModalTransition'
+import { periodoPorFecha } from '../hooks/useSeleccionActiva'
 
 const MENU = [
   { to: '/dashboard',      icono: '📊', label: 'Dashboard'      },
@@ -15,8 +16,11 @@ const MENU = [
 
 const COLORES = ['#2563A8','#00695C','#5C2D91','#C84B00','#1A6B3A','#B71C1C','#7A5C00']
 
-export default function Layout({ anio, materia, materias, onCambiarMateria }) {
+export default function Layout({ anio, materia, materias, onCambiarMateria, cursoActivoId, onCambiarCurso, periodoActivoId, onCambiarPeriodo }) {
   const [nombreMaestro,  setNombreMaestro]  = useState('Prof.')
+  const [cursos,         setCursos]         = useState([])
+  const [periodos,       setPeriodos]       = useState([])
+  const location = useLocation()
   const [modalMaterias,  setModalMaterias]  = useState(false)
   const [modalNueva,     setModalNueva]     = useState(false)
   const [formNueva,      setFormNueva]      = useState({ nombre:'', color:'#2563A8' })
@@ -29,6 +33,18 @@ export default function Layout({ anio, materia, materias, onCambiarMateria }) {
       if (cfg?.nombre_maestro) setNombreMaestro(cfg.nombre_maestro)
     })
   }, [])
+
+  // Se recarga al navegar para reflejar cursos creados/renombrados en la página Cursos.
+  useEffect(() => {
+    if (!anio) return
+    window.api.invoke('get-cursos', anio.id).then(setCursos)
+    window.api.invoke('get-periodos', anio.id).then(setPeriodos)
+  }, [anio, location.pathname])
+
+  const cursoActivo   = cursos.find(c => c.id === cursoActivoId) || cursos[0] || null
+  const periodoActivo = periodos.find(p => p.id === periodoActivoId) || periodoPorFecha(periodos)
+  const periodoHoy    = periodoPorFecha(periodos)
+  const fueraDePeriodo = periodoActivo && periodoHoy && periodoActivo.id !== periodoHoy.id
 
   async function crearMateria() {
     if (!formNueva.nombre.trim()) return
@@ -105,6 +121,46 @@ export default function Layout({ anio, materia, materias, onCambiarMateria }) {
             <div style={{ margin:'12px 12px 4px', padding:'10px 12px', borderRadius:10, background:colorMateria+'15', border:'1.5px solid '+colorMateria+'40' }}>
               <div style={{ fontSize:10, fontWeight:700, color:colorMateria, letterSpacing:1, marginBottom:2 }}>MATERIA ACTIVA</div>
               <div style={{ fontSize:13, fontWeight:800, color:colorMateria }}>{materia.nombre}</div>
+            </div>
+          )}
+
+          {cursoActivo && (
+            <div style={{ margin:'4px 12px', padding:'10px 12px 12px', borderRadius:10, background:cursoActivo.color, color:'#fff', boxShadow:'0 2px 6px '+cursoActivo.color+'55' }}>
+              <div style={{ fontSize:10, fontWeight:700, letterSpacing:1, opacity:.85, marginBottom:4 }}>CURSO ACTIVO</div>
+              <select
+                value={cursoActivo.id}
+                onChange={e => onCambiarCurso && onCambiarCurso(Number(e.target.value))}
+                title="Cambiar el curso en todas las pestañas"
+                style={{ width:'100%', background:'rgba(255,255,255,0.18)', color:'#fff', border:'1.5px solid rgba(255,255,255,0.5)', borderRadius:7, padding:'5px 6px', fontSize:14, fontWeight:800, cursor:'pointer', outline:'none' }}
+              >
+                {cursos.map(c => <option key={c.id} value={c.id} style={{ color:'#1B3A6B', background:'#fff' }}>{c.nombre}</option>)}
+              </select>
+
+              {periodos.length > 0 && (
+                <div style={{ display:'flex', gap:4, marginTop:8 }}>
+                  {periodos.map(p => {
+                    const sel = periodoActivo?.id === p.id
+                    return (
+                      <button key={p.id} onClick={() => onCambiarPeriodo && onCambiarPeriodo(p.id)}
+                        title={(p.titulo || p.nombre) + (periodoHoy?.id === p.id ? ' — período actual' : '')}
+                        style={{
+                          flex:1, padding:'3px 0', borderRadius:6, fontSize:11, fontWeight:800, cursor:'pointer',
+                          background: sel ? '#fff' : 'transparent',
+                          color:      sel ? cursoActivo.color : '#fff',
+                          border:     '1.5px solid ' + (sel ? '#fff' : 'rgba(255,255,255,0.45)'),
+                          textDecoration: periodoHoy?.id === p.id ? 'underline' : 'none',
+                        }}>
+                        {p.nombre}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              {fueraDePeriodo && (
+                <div style={{ marginTop:8, padding:'5px 7px', borderRadius:6, background:'#FFF4D6', color:'#7A5C00', fontSize:11, fontWeight:700, lineHeight:1.3 }}>
+                  ⚠️ Estás en {periodoActivo.nombre}. El período actual es {periodoHoy.nombre}.
+                </div>
+              )}
             </div>
           )}
 

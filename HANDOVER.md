@@ -2,12 +2,26 @@
 # Sistema Académico Docente
 
 **Versión:** 1.9.1
-**Fecha:** 2026-10-05
-**Estado:** v1.9.1 — reporte por lote como un solo HTML interactivo (filtros, lista filtrada imprimible, reportes individuales de la lista). `.exe` generado en `release/`. Datos de prueba sembrados en 6to P1 (borrar con `scripts/sembrar-prueba-reportes.js --limpiar`). Pendiente de decisión: asignar F.I.H.R a los registros del año actual que quedaron sin materia. Local va varios commits por delante de `origin/main` (nada pusheado desde v1.7.0).
+**Fecha:** 2026-10-28
+**Estado:** En curso (sin commit, sin versión): curso y período activos compartidos por toda la app. Siguiente: "Registro por evidencias" (ver abajo). Antes: v1.9.1 — reporte por lote como un solo HTML interactivo (filtros, lista filtrada imprimible, reportes individuales de la lista). `.exe` generado en `release/`. Datos de prueba sembrados en 6to P1 (borrar con `scripts/sembrar-prueba-reportes.js --limpiar`). Pendiente de decisión: asignar F.I.H.R a los registros del año actual que quedaron sin materia. Local va varios commits por delante de `origin/main` (nada pusheado desde v1.7.0).
 
 ---
 
 ## Lo último que se hizo
+
+### Curso y período activos para toda la app (2026-10-28) — sin commit
+Pedido del usuario: sin darse cuenta podía anotar asistencia/notas en 2do A (el primero de la lista) porque cada pestaña arrancaba siempre en el primer curso.
+- Causa: cada página (Estudiantes, Asistencia, Calificaciones, Temario, Reportes) tenía su propio `cursoSel` que arrancaba en `cursos[0]`; el `?cursoId=` de CursoEspacio se perdía al tocar el menú. Calificaciones y Temario arrancaban además en **P1**.
+- **Todos los períodos de la BD están `abierto`** (nunca se cierran), así que elegir por estado no sirve. Nuevo `periodoPorFecha()`: el período cuyas fechas contienen hoy; entre períodos, el último que ya empezó; sin fechas, el primero. **P3 y P4 del año 2 no tienen fechas** → hay que cargarlas en Configuración.
+- `App.jsx`: `cursoActivoId` (guardado en config `curso_activo_id`) y `periodoActivoId` (no se guarda: al abrir la app se calcula por fecha). Hook `src/hooks/useSeleccionActiva.js` (`useCursoActivo`, `usePeriodoActivo`) usado por todas las páginas; cambiar curso/período en cualquiera cambia todas.
+- `Layout.jsx`: bloque "CURSO ACTIVO" en el menú lateral con el color del curso, selector de curso y botones P1–P4 (el actual subrayado) + aviso ámbar si el período elegido no es el de hoy.
+- CursoEspacio: entrar a un curso lo vuelve activo. Dashboard: clic en el semáforo de un curso abre Calificaciones **en ese curso** (antes abría el primero — bug).
+- Verificado: `vite build` OK; `periodoPorFecha` probado con las fechas reales (28/10→P1, 31/10→P1, 2/11→P2, sin fechas→P1, vacío→null). **Falta**: revisión del usuario en la ventana real.
+
+### Próximo: Registro por evidencias (analizado, no empezado)
+Fuente: `C:\Users\leone\Documents\referencia-6to\<grado>\P<n>\plan.json` (`evaluacion.grupos[].evidencias` con sesión, instrumento, puntos) y `distribucion_sistema_docente.md` (reparto 10-15-20-15-15-25, una actividad por semana, grupo 3 = Tecnológica, grupo 4 = Cívica). El `web.json` de la semana 1 trae lo mismo en `detalle.plan_periodo.evaluacion`, pero `importClasesPortalArs` **lo descarta** (no guarda `plan_periodo`).
+Idea acordada: crear las 6 actividades desde el plan (con vista previa) + anotar puntos crudos por evidencia (16/20) y que la app convierta a la distribución multi existente (sin tocar fórmulas) + imprimir planilla en blanco/llena.
+Decisiones del usuario: evidencia vacía = **pendiente** (no 0); impresión **por semana y por período**. Pendiente preguntar: rúbrica por niveles o puntaje directo.
 
 ### Release v1.9.1 (2026-10-05) — reporte por lote → un solo HTML interactivo
 Pedido del usuario: en vez de una carpeta con un PDF por estudiante, un archivo para enviar al supervisor donde se pueda buscar/filtrar quién va bien y quién va flojo, y desde ahí sacar el PDF de un estudiante (p. ej. para un padre). Cuidar la estética del programa.
