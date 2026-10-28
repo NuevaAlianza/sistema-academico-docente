@@ -1,9 +1,9 @@
 # HANDOVER.md — Estado actual del proyecto
 # Sistema Académico Docente
 
-**Versión:** 1.9.1
+**Versión:** 1.10.0
 **Fecha:** 2026-10-28
-**Estado:** En curso (sin commit, sin versión): curso y período activos compartidos por toda la app. Siguiente: "Registro por evidencias" (ver abajo). Antes: v1.9.1 — reporte por lote como un solo HTML interactivo (filtros, lista filtrada imprimible, reportes individuales de la lista). `.exe` generado en `release/`. Datos de prueba sembrados en 6to P1 (borrar con `scripts/sembrar-prueba-reportes.js --limpiar`). Pendiente de decisión: asignar F.I.H.R a los registros del año actual que quedaron sin materia. Local va varios commits por delante de `origin/main` (nada pusheado desde v1.7.0).
+**Estado:** v1.10.0 — curso/período activos para toda la app + registro por evidencias desde el plan (actividades, temas, tabla por evidencias, planillas, pendientes en Reportes). **Esta PC es de pruebas**; la de uso diario recibe cambios instalando el `.exe`. Antes de instalar allá: revisar si los datos del año actual quedaron sin materia (pendiente de decisión), cargar fechas de P3/P4. Pendientes viejos: rotar `service_role` de Portal-Ars, limpiar backup de prueba en Supabase, traslado de estudiantes (sin decisión). Nada pusheado desde v1.7.0.
 
 ---
 

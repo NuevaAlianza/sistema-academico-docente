@@ -1,5 +1,28 @@
 # Changelog — Sistema Académico Docente
 
+## [1.10.0] — 2026-10-28
+
+### Added (Nuevo)
+- **Curso activo para toda la app**: el curso elegido se mantiene al pasar entre Estudiantes, Asistencia, Calificaciones, Temario y Reportes, y se recuerda al cerrar. Se ve siempre en el menú lateral ("CURSO ACTIVO", con su color y un selector) junto a los botones P1–P4.
+- **Período según la fecha**: al abrir, la app elige el período cuyas fechas incluyen hoy (Configuración → fechas de cada período). Aviso en el menú si se está trabajando en otro período.
+- **Registro por evidencias** (Calificaciones → "📋 Crear desde el plan"): con el `plan.json` o `web.json` del período crea una actividad por semana con sus evidencias y pesos (10-15-20-15-15-25), y los temas de cada semana en el Temario, vinculados a su actividad. Vista previa con pesos editables; no duplica si se repite.
+- Tabla por evidencias: se anotan los puntos del plan (p. ej. 20 de 25) y la app pone la nota en la competencia de la actividad, igual que si se escribiera a mano. Una evidencia que falta deja la semana "pendiente" (no cuenta en el promedio); botón "Pendientes → 0".
+- Planilla imprimible del registro (en blanco o llena), por semana o del período completo, A4 horizontal.
+- Reportes: tarjeta "📋 Evidencias pendientes" en el grupal, "Evidencias por semana" en el individual, indicador "N evidencias pendientes"; también en los PDF y en el HTML del lote.
+
+### Changed (Cambiado)
+- Calificaciones y Temario ya no abren siempre en P1, ni en el primer curso de la lista.
+- Entrar a un curso desde Cursos lo vuelve el curso activo.
+- "Duplicar a otros cursos" copia también las evidencias.
+- Importar clases de Portal-Ars conserva la evaluación del período (`plan_periodo`).
+
+### Fixed (Corregido)
+- Dashboard: el clic en un curso del semáforo abría Calificaciones en el primer curso en vez del elegido.
+
+### Internal (Interno)
+- Tablas nuevas `actividad_evidencias` y `evidencia_puntos` (se crean solas al abrir la app). No cambian las fórmulas de cálculo.
+- Hook `src/hooks/useSeleccionActiva.js`; componente `RegistroEvidencias.jsx`; plantilla `src/reportes/planillaEvidencias.js`.
+
 ## [1.9.1] — 2026-10-05
 
 ### Changed (Cambiado)
