@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useModalTransition } from '../hooks/useModalTransition'
 import { useCursoActivo, usePeriodoActivo } from '../hooks/useSeleccionActiva'
+import RegistroEvidencias from '../components/RegistroEvidencias'
+import { construirHTMLPlanilla } from '../reportes/planillaEvidencias'
 import HistorialParticipacion, { fmtPts, colorPts } from '../components/HistorialParticipacion'
 
 const COMPETENCIAS = [
@@ -50,8 +52,12 @@ export default function Calificaciones({ anio, materia, cursoActivoId, onCambiar
   const [temasPer,        setTemasPer]        = useState([])
   const [partAct,         setPartAct]         = useState(null) // { vinculada, temas, porEstudiante }
   const [histPart,        setHistPart]        = useState(null) // { est, items }
+  const [verDirectas,     setVerDirectas]     = useState(false) // actividad con evidencias: ver la tabla de notas de siempre
+  const [planPrev,        setPlanPrev]        = useState(null)  // vista previa de "Crear desde el plan"
+  const [creandoPlan,     setCreandoPlan]     = useState(false)
   const modalActT       = useModalTransition(modalAct)
   const modalDuplicarT  = useModalTransition(modalDuplicar)
+  const planPrevT       = useModalTransition(planPrev)
   const confirmT        = useModalTransition(confirm)
 
   useEffect(() => {
@@ -163,8 +169,60 @@ export default function Calificaciones({ anio, materia, cursoActivoId, onCambiar
     setVista('resumen')
   }
 
+  async function recargarActividades() {
+    if (!cursoSel || !perSel) return
+    setActividades(await window.api.invoke('get-actividades', cursoSel.id, perSel.id, materiaId))
+  }
+
+  // ── Crear actividades desde el plan (referencia-6to) ──
+  async function abrirPlan(elegirArchivo) {
+    if (!cursoSel || !perSel) return
+    const res = await window.api.invoke('preparar-plan-evaluacion', { cursoId: cursoSel.id, periodoId: perSel.id, materiaId, elegirArchivo })
+    if (res === null) return // canceló el diálogo
+    if (res.error) { alert(res.error); return }
+    setPlanPrev(res)
+  }
+
+  function cambiarPesoPlan(semana, valor) {
+    setPlanPrev(p => ({ ...p, semanas: p.semanas.map(s => s.semana === semana ? { ...s, peso: valor } : s) }))
+  }
+
+  async function confirmarPlan() {
+    setCreandoPlan(true)
+    // Se mandan todas las semanas: las que ya existen se omiten, pero se vinculan a su tema si no lo tenían.
+    const r = await window.api.invoke('crear-actividades-plan', {
+      cursoId: cursoSel.id, periodoId: perSel.id, materiaId,
+      semanas: planPrev.semanas.map(s => ({ ...s, peso: Number(s.peso) })),
+      filasWeb: planPrev.filasWeb || null,
+    })
+    setCreandoPlan(false)
+    if (r.error) { alert(r.error); return }
+    setPlanPrev(null)
+    const partes = []
+    if (r.creadas) partes.push(`${r.creadas} actividades`)
+    if (r.temasCreados) partes.push(`${r.temasCreados} temas en el Temario`)
+    toast2(`✅ ${partes.length ? 'Creados: ' + partes.join(' y ') : 'Nada nuevo que crear'}${r.vinculadas ? ` · ${r.vinculadas} vinculadas a su tema` : ''} — ${cursoSel.nombre} · ${perSel.nombre}`)
+    recargarActividades()
+    setVista('actividades')
+  }
+
+  async function imprimirPlanilla(actividadId, llena) {
+    const datos = await window.api.invoke('get-planilla-evidencias', cursoSel.id, perSel.id, materiaId, actividadId)
+    if (!datos.actividades.length) { toast2('No hay actividades con evidencias en este período'); return }
+    const cfgImp = await window.api.invoke('get-config')
+    const titulo = actividadId
+      ? `Registro de evidencias — ${datos.actividades[0].nombre}`
+      : `Registro de evidencias — ${perSel.nombre} ${titulosPer[perSel.numero_orden] || perSel.titulo || ''}`.trim()
+    const html = construirHTMLPlanilla({ datos, curso: cursoSel, periodo: perSel, materia, cfg: cfgImp, competencias: COMPETENCIAS, llena, titulo })
+    const win = window.open('', '_blank')
+    if (!win) { alert('No se pudo abrir la ventana de impresión.'); return }
+    win.document.write(html)
+    win.document.close()
+  }
+
   async function abrirNotas(act) {
     setActSel(act)
+    setVerDirectas(false)
     setDistribuciones({})
     setPartAct(null)
     window.api.invoke('get-participacion-actividad', act.id).then(setPartAct).catch(() => {})
@@ -674,6 +732,14 @@ export default function Calificaciones({ anio, materia, cursoActivoId, onCambiar
                 padding:'7px 16px', borderRadius:8, border:'1px solid #DDE3ED', fontSize:12, fontWeight:700,
                 background:'transparent', color:'#1B3A6B', cursor:'pointer', marginLeft:4,
               }}>+ Nueva Actividad</button>
+              <button onClick={() => abrirPlan(false)} title="Crea una actividad por semana con sus evidencias, desde el plan del período" style={{
+                padding:'7px 16px', borderRadius:8, border:'1px solid #5C2D91', fontSize:12, fontWeight:700,
+                background:'transparent', color:'#5C2D91', cursor:'pointer', marginLeft:4,
+              }}>📋 Crear desde el plan</button>
+              {actividades.some(a => a.n_evidencias > 0) && <>
+                <button onClick={() => imprimirPlanilla(null, false)} title="Planilla de todo el período para anotar a mano" style={{ padding:'7px 16px', borderRadius:8, border:'1px solid #1B3A6B', fontSize:12, fontWeight:700, background:'transparent', color:'#1B3A6B', cursor:'pointer', marginLeft:4 }}>🖨️ Planilla en blanco</button>
+                <button onClick={() => imprimirPlanilla(null, true)} title="Planilla de todo el período con lo registrado" style={{ padding:'7px 16px', borderRadius:8, border:'1px solid #1B3A6B', fontSize:12, fontWeight:700, background:'transparent', color:'#1B3A6B', cursor:'pointer', marginLeft:4 }}>🖨️ Planilla llena</button>
+              </>}
               {actividades.length > 0 && (
                 <button onClick={abrirDuplicar} style={{
                   padding:'7px 16px', borderRadius:8, border:'1px solid #00695C', fontSize:12, fontWeight:700,
@@ -1203,6 +1269,7 @@ export default function Calificaciones({ anio, materia, cursoActivoId, onCambiar
                                 {comps.map(c => (
                                   <span key={c} style={{ background:(COL_MULTI[c]||'#888')+'18', color:COL_MULTI[c]||'#888', padding:'2px 7px', borderRadius:8, fontSize:10, fontWeight:600 }}>{c.slice(0,3)}</span>
                                 ))}
+                                {act.n_evidencias > 0 && <span style={{ background:'#EDE0F7', color:'#5C2D91', padding:'2px 7px', borderRadius:8, fontSize:10, fontWeight:700 }}>📋 {act.n_evidencias} evidencias</span>}
                               </div>
                               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                                 <span style={{ background:'#D6E4F7', color:'#2563A8', padding:'2px 8px', borderRadius:8, fontSize:11, fontWeight:600 }}>Peso: {act.peso} ({comps.length > 0 ? (act.peso/comps.length).toFixed(1)+' c/u' : '—'})</span>
@@ -1241,6 +1308,7 @@ export default function Calificaciones({ anio, materia, cursoActivoId, onCambiar
                                 <button onClick={e => abrirEditar(act, e)} style={{ background:'#EEF2F7', border:'none', borderRadius:6, padding:'3px 8px', fontSize:11, cursor:'pointer', color:'#555', fontWeight:600 }}>✏️</button>
                                 <button onClick={e => eliminarActividad(act, e)} style={{ background:'#FEE2E2', border:'none', borderRadius:6, padding:'3px 8px', fontSize:11, cursor:'pointer', color:'#B91C1C', fontWeight:600 }}>🗑️</button>
                               </div>
+                              {act.n_evidencias > 0 && <div style={{ marginBottom:6 }}><span style={{ background:'#EDE0F7', color:'#5C2D91', padding:'2px 7px', borderRadius:8, fontSize:10, fontWeight:700 }}>📋 {act.n_evidencias} evidencias</span></div>}
                               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                                 <span style={{ background:comp.bg, color:comp.color, padding:'2px 8px', borderRadius:8, fontSize:11, fontWeight:600 }}>Peso: {act.peso}</span>
                                 <span style={{ fontSize:11, color:'#888' }}>{act.fecha||''}</span>
@@ -1258,7 +1326,20 @@ export default function Calificaciones({ anio, materia, cursoActivoId, onCambiar
         })()}
 
         {/* ── VISTA NOTAS DE ACTIVIDAD ── */}
-        {vista === 'notas' && actSel && (() => {
+        {vista === 'notas' && actSel && actSel.n_evidencias > 0 && !verDirectas && (
+          <RegistroEvidencias
+            actividad={actSel}
+            estudiantes={estudiantes}
+            competencias={COMPETENCIAS}
+            colPer={colPer}
+            onVolver={() => { setVista('actividades'); recargarActividades() }}
+            onVerDirectas={() => abrirNotas(actSel).then(() => setVerDirectas(true))}
+            onImprimir={llena => imprimirPlanilla(actSel.id, llena)}
+            onToast={toast2}
+          />
+        )}
+
+        {vista === 'notas' && actSel && (actSel.n_evidencias === 0 || verDirectas) && (() => {
           const esMulti = actSel.modo === 'multi'
           const compsMultiRaw = esMulti && actSel.competencias_multi ? JSON.parse(actSel.competencias_multi) : []
           compsMultiRaw.forEach(k => { if (!COMPETENCIAS.some(c => c.key === k)) console.warn('[notas] competencia desconocida ignorada:', k, 'act', actSel.id) })
@@ -1312,6 +1393,9 @@ export default function Calificaciones({ anio, materia, cursoActivoId, onCambiar
                   </div>
                 </div>
                 <div style={{ flex:1 }} />
+                {actSel.n_evidencias > 0 && (
+                  <button onClick={() => setVerDirectas(false)} style={{ padding:'7px 14px', borderRadius:8, border:'1px solid #5C2D91', fontSize:12, fontWeight:700, background:'transparent', color:'#5C2D91', cursor:'pointer' }}>📋 Por evidencias</button>
+                )}
                 {prom !== null && (
                   <div style={{ textAlign:'center', background:'#fff', borderRadius:10, padding:'8px 16px', border:'1px solid #DDE3ED' }}>
                     <div style={{ fontSize:22, fontWeight:900, color:colorProm }}>{prom}</div>
@@ -1694,6 +1778,126 @@ export default function Calificaciones({ anio, materia, cursoActivoId, onCambiar
           </div>
         </div>
       )}
+
+      {/* MODAL CREAR DESDE EL PLAN */}
+      {planPrevT && (() => {
+        const pp = planPrevT.value
+        const COL = Object.fromEntries(COMPETENCIAS.map(c => [c.key, c]))
+        const nuevas = pp.sinPlanGuardado ? [] : pp.semanas.filter(s => !s.existe)
+        const otras = pp.sinPlanGuardado ? [] : pp.existentes.filter(a => !pp.semanas.some(s => s.existe && s.nombre === a.nombre))
+        const pesoOtras = otras.reduce((s, a) => s + a.peso, 0)
+        const pesoNuevas = nuevas.reduce((s, x) => s + (Number(x.peso) || 0), 0)
+        const pesoExistente = pp.sinPlanGuardado ? 0 : pp.existentes.reduce((s, a) => s + a.peso, 0)
+        const pesoTotal = Math.round((pesoExistente + pesoNuevas) * 10) / 10
+        const pesoInvalido = nuevas.some(s => !(Number(s.peso) > 0 && Number(s.peso) <= 100))
+        const excede = pesoTotal > 100.01
+        const semanasPP = pp.sinPlanGuardado ? [] : pp.semanas
+        const nTemasNuevos = semanasPP.filter(s => s.temaNuevo && (!s.existe || s.existeSinTema)).length
+        const nPorVincular = semanasPP.filter(s => s.existe && s.existeSinTema && (s.temaId || s.temaNuevo)).length
+        const sinTema = semanasPP.filter(s => !s.temaId && !s.temaNuevo).length
+        const puede = (nuevas.length > 0 || nTemasNuevos > 0 || nPorVincular > 0) && !excede && !pesoInvalido && !creandoPlan
+        const textoBoton = [nuevas.length ? `${nuevas.length} actividades` : '', nTemasNuevos ? `${nTemasNuevos} temas` : ''].filter(Boolean).join(' y ')
+        return (
+          <div className="modal-backdrop" data-closing={planPrevT.closing} style={{ position:'fixed', inset:0, background:'#0005', display:'flex', alignItems:'center', justifyContent:'center', zIndex:500 }}
+            onClick={e => { if (e.target === e.currentTarget && !creandoPlan) setPlanPrev(null) }}>
+            <div className="modal-content" data-closing={planPrevT.closing} style={{ background:'#fff', borderRadius:14, padding:24, width:760, maxWidth:'94vw', maxHeight:'88vh', display:'flex', flexDirection:'column', boxShadow:'0 16px 48px #0004' }}>
+              <h2 style={{ color:'#1B3A6B', marginBottom:4, fontSize:17 }}>📋 Crear actividades desde el plan</h2>
+              <p style={{ color:'#888', fontSize:12, marginBottom:12 }}>
+                En <strong style={{ color:cursoSel?.color }}>{cursoSel?.nombre}</strong> · <strong>{perSel?.nombre}</strong>{materia ? ' · ' + materia.nombre : ''}
+                {!pp.sinPlanGuardado && <> · plan: {pp.archivo || 'guardado en el Temario'}{pp.unidad ? ' · ' + pp.unidad : ''}</>}
+              </p>
+
+              {pp.sinPlanGuardado ? (
+                <div style={{ padding:20, background:'#F8FAFD', borderRadius:10, fontSize:13, color:'#555', lineHeight:1.6 }}>
+                  El Temario de este período no tiene la evaluación del plan. Abre el <b>plan.json</b> (o el <b>web.json</b>) del período desde la carpeta de planificación, por ejemplo <code>referencia-6to\{cursoSel?.grado || '6to'}\P{perSel?.numero_orden}</code>.
+                  <div style={{ marginTop:14 }}>
+                    <button onClick={() => abrirPlan(true)} style={{ padding:'9px 20px', background:'#5C2D91', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer' }}>📂 Abrir plan.json…</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ overflowY:'auto', flex:1, paddingRight:4 }}>
+                  {pp.avisos.length > 0 && (
+                    <div style={{ marginBottom:10, padding:'8px 12px', background:'#FFF4D6', color:'#7A5C00', borderRadius:8, fontSize:12, fontWeight:600 }}>
+                      {pp.avisos.map((a, i) => <div key={i}>⚠️ {a}</div>)}
+                    </div>
+                  )}
+                  {sinTema > 0 && (
+                    <div style={{ marginBottom:10, padding:'8px 12px', background:'#FDDFDF', color:'#8A1C1C', borderRadius:8, fontSize:12 }}>
+                      {sinTema} semana(s) quedarán sin tema en el Temario: no se encontró el <b>web.json</b> del período. Abre el plan.json desde la carpeta del período (con su web.json al lado) o el web.json directamente.
+                    </div>
+                  )}
+                  {otras.length > 0 && (
+                    <div style={{ marginBottom:10, padding:'8px 12px', background:'#FDECD7', color:'#8A3B00', borderRadius:8, fontSize:12 }}>
+                      <b>Este período ya tiene {otras.length} actividad(es) que no son del plan</b> (peso {Math.round(pesoOtras*10)/10}):{' '}
+                      {otras.map(a => `${a.nombre}${a.notas ? ` (${a.notas} notas)` : ''}`).join(' · ')}.
+                      {' '}Las nuevas se agregan junto a ellas; no se borra nada.
+                    </div>
+                  )}
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                    <thead>
+                      <tr style={{ background:'#F8FAFD', color:'#555' }}>
+                        <th style={{ textAlign:'left', padding:6 }}>Actividad</th>
+                        <th style={{ textAlign:'left', padding:6 }}>Evidencias (puntos del plan)</th>
+                        <th style={{ padding:6, width:70 }}>Peso</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pp.semanas.map(s => (
+                        <tr key={s.semana} style={{ borderTop:'1px solid #EEF2F7', opacity: s.existe ? .5 : 1, verticalAlign:'top' }}>
+                          <td style={{ padding:6 }}>
+                            <div style={{ fontWeight:700, color:'#1B3A6B' }}>{TIPO_ICONO[s.tipo] || '📝'} {s.nombre}</div>
+                            <div style={{ fontSize:11, color:'#888' }}>
+                              {s.modo === 'multi' ? `Multi · máx. ${Math.round(100 / s.competencias.length * 10) / 10} c/u` : 'Simple'}
+                              {s.existe && (s.existeSinTema && (s.temaId || s.temaNuevo) ? ' · ya existe, solo se vincula a su tema' : ' · ya existe, se omite')}
+                            </div>
+                            <div style={{ fontSize:11, marginTop:2, color: s.temaNuevo ? '#00695C' : s.temaId ? '#2563A8' : '#B71C1C' }}>
+                              {s.temaNuevo ? `📋 Crea el tema "${s.temaNuevo}" en el Temario`
+                                : s.temaId ? `📋 Tema: "${s.temaTitulo}"`
+                                : '📋 Sin tema para esta semana'}
+                            </div>
+                          </td>
+                          <td style={{ padding:6 }}>
+                            {s.evidencias.map((e, i) => (
+                              <div key={i} style={{ color: COL[e.competencia]?.color || '#555' }}>
+                                {COL[e.competencia]?.icono} <span style={{ color:'#333' }}>{e.sesion} · {e.nombre}</span> <b>/{e.puntos}</b>
+                              </div>
+                            ))}
+                          </td>
+                          <td style={{ padding:6, textAlign:'center' }}>
+                            <input type="number" min="1" max="100" value={s.peso} disabled={s.existe}
+                              onChange={e => cambiarPesoPlan(s.semana, e.target.value)}
+                              style={{ width:56, padding:'5px 4px', textAlign:'center', fontWeight:700, border:'1.5px solid #DDE3ED', borderRadius:6 }} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {!pp.sinPlanGuardado && (
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:14, flexWrap:'wrap' }}>
+                  <span style={{ fontSize:13, fontWeight:800, color: excede ? '#B71C1C' : pesoTotal >= 99.9 ? '#1A6B3A' : '#C84B00' }}>
+                    Peso total del período: {pesoTotal}/100
+                  </span>
+                  {excede && <span style={{ fontSize:12, color:'#B71C1C' }}>Pasa de 100: ajusta los pesos o quita actividades viejas antes de crear.</span>}
+                  <div style={{ flex:1 }} />
+                  <button onClick={() => abrirPlan(true)} style={{ padding:'9px 14px', background:'transparent', border:'1px solid #DDE3ED', borderRadius:8, fontSize:12, cursor:'pointer', color:'#555' }}>📂 Otro archivo…</button>
+                  <button onClick={() => setPlanPrev(null)} disabled={creandoPlan} style={{ padding:'9px 20px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
+                  <button onClick={confirmarPlan} disabled={!puede} style={{ padding:'9px 22px', background: puede ? '#5C2D91' : '#CCC', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor: puede ? 'pointer' : 'default' }}>
+                    {creandoPlan ? '⏳ Creando…' : textoBoton ? `✅ Crear ${textoBoton}` : `🔗 Vincular ${nPorVincular} actividades a su tema`}
+                  </button>
+                </div>
+              )}
+              {pp.sinPlanGuardado && (
+                <div style={{ display:'flex', justifyContent:'flex-end', marginTop:14 }}>
+                  <button onClick={() => setPlanPrev(null)} style={{ padding:'9px 20px', background:'#EEF2F7', border:'1px solid #DDE3ED', borderRadius:8, fontSize:13, cursor:'pointer', color:'#555' }}>Cancelar</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* MODAL CONFIRMAR ELIMINAR */}
       {confirmT && (

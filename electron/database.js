@@ -19,6 +19,125 @@ function notaFromDist(dist) {
   return Math.round(Object.values(dist).reduce((a, b) => a + b, 0) * 10) / 10;
 }
 
+// ── Evaluación del plan (referencia-6to: plan.json / web.json) ─────────────
+// Grupos de competencias del plan → claves de la app. Ojo: en el plan el grupo 3 es
+// Tecnológica y el 4 Cívica; en la app el orden de columnas es Com → PL → Cív → Tec.
+const GRUPO_COMPETENCIA = { 1: 'Comunicativa', 2: 'Pensamiento Logico', 3: 'Tecnologica', 4: 'Civica' };
+const ORDEN_COMPS = ['Comunicativa', 'Pensamiento Logico', 'Civica', 'Tecnologica'];
+const PESOS_6_SEMANAS = [10, 15, 20, 15, 15, 25];
+const r1 = x => Math.round(x * 10) / 10;
+
+// Acepta plan.json (tiene `evaluacion`) o web.json (arreglo de semanas; la evaluación
+// viene en detalle.plan_periodo de alguna semana). Devuelve una actividad por semana.
+function leerPlanEvaluacion(json) {
+  let plan = null;
+  if (Array.isArray(json)) {
+    const conPlan = json.find(s => s && s.detalle && s.detalle.plan_periodo && s.detalle.plan_periodo.evaluacion);
+    if (conPlan) plan = { ...conPlan.detalle.plan_periodo, semanas: json.map(s => ({ semana: s.semana, titulo: s.titulo })) };
+  } else if (json && typeof json === 'object' && json.evaluacion) {
+    plan = json;
+  }
+  if (!plan || !Array.isArray(plan.evaluacion && plan.evaluacion.grupos)) {
+    return { error: 'El archivo no trae la evaluación del período (evaluacion.grupos). Usa el plan.json o el web.json del período.' };
+  }
+
+  const avisos = [];
+  const porSemana = {};
+  for (const gr of plan.evaluacion.grupos) {
+    const comp = GRUPO_COMPETENCIA[gr.grupo];
+    if (!comp) {
+      console.warn('Plan: grupo de competencias desconocido', gr.grupo);
+      avisos.push(`Grupo de competencias desconocido (${gr.grupo}): se omitió.`);
+      continue;
+    }
+    for (const e of gr.evidencias || []) {
+      const m = /S(\d+)/i.exec(e.sesion || '');
+      const puntos = Number(e.puntos);
+      if (!m) { avisos.push(`"${e.nombre}": sesión sin semana (${e.sesion || 'vacía'}), se omitió.`); continue; }
+      if (!Number.isFinite(puntos) || puntos <= 0) { avisos.push(`"${e.nombre}": puntos inválidos (${e.puntos}), se omitió.`); continue; }
+      const w = Number(m[1]);
+      (porSemana[w] = porSemana[w] || []).push({
+        competencia: comp, nombre: String(e.nombre || 'Evidencia'), sesion: e.sesion || '',
+        instrumento: e.instrumento || '', puntos,
+      });
+    }
+  }
+
+  const nums = Object.keys(porSemana).map(Number).sort((a, b) => a - b);
+  if (nums.length === 0) return { error: 'La evaluación del plan no tiene evidencias con puntos.' };
+  const pesoIgual = Math.round(100 / nums.length);
+  const intSemana = plan.integracion && Number(plan.integracion.semana);
+  const ultima = nums[nums.length - 1];
+
+  const semanas = nums.map((w, i) => {
+    const evidencias = porSemana[w].sort((a, b) =>
+      ORDEN_COMPS.indexOf(a.competencia) - ORDEN_COMPS.indexOf(b.competencia) || a.sesion.localeCompare(b.sesion));
+    const competencias = ORDEN_COMPS.filter(c => evidencias.some(e => e.competencia === c));
+    const s = (plan.semanas || []).find(x => Number(x.semana) === w);
+    return {
+      semana: w,
+      nombre: `S${w} — ${(s && s.titulo) || 'Semana ' + w}`,
+      tipo: w === ultima && nums.length > 1 ? 'Proyecto' : (w === intSemana ? 'Exposicion' : 'Tarea'),
+      modo: competencias.length > 1 ? 'multi' : 'simple',
+      competencias,
+      peso: nums.length === 6 ? PESOS_6_SEMANAS[i] : pesoIgual,
+      evidencias,
+    };
+  });
+
+  return {
+    grado: plan.grado || null,
+    periodo: plan.periodo != null ? Number(plan.periodo) : null,
+    unidad: plan.unidad && plan.unidad.titulo ? plan.unidad.titulo : null,
+    semanas, avisos,
+  };
+}
+
+// meta_json de un tema a partir de una fila de Portal-Ars / web.json (guarda todo el `detalle`).
+function metaTemaPortalArs(it) {
+  const d = (it.detalle && typeof it.detalle === 'object') ? it.detalle : {};
+  const meta = {
+    semana: it.semana ?? null, texto_ampliado: it.texto_ampliado || null,
+    subtitulo: d.subtitulo || null, fase: d.fase || null, competencia: d.competencia || null,
+    indicadores: d.indicadores || null, peso: d.peso || null, instrumento: d.instrumento || null,
+    actividades: d.actividades || null, texto_biblico: d.texto_biblico || null,
+    metacognicion: d.metacognicion || null, recursos: d.recursos || null,
+    materiales: d.materiales || null, actividades_cuaderno: d.actividades_cuaderno || null,
+    classroom_txt: d.classroom_txt || null, rubrica: d.rubrica || null, nota_sustituto: d.nota_sustituto || null,
+    plan_periodo: d.plan_periodo || null,
+    origen: 'portal-ars',
+  };
+  Object.keys(meta).forEach(k => { if (meta[k] === null) delete meta[k]; });
+  return Object.keys(meta).length > 0 ? JSON.stringify(meta) : null;
+}
+
+// Nota de una actividad a partir de los puntos de sus evidencias, igual que si el
+// docente la escribiera: simple → 0-100; multi → por competencia, sobre su techo (100/n).
+// Devuelve null si falta alguna evidencia (pendiente) o la configuración no cuadra.
+function notaDesdeEvidencias(act, evidencias, puntosEst) {
+  if (evidencias.some(e => puntosEst[e.id] == null)) return null;
+  const sumar = comp => {
+    const evs = evidencias.filter(e => comp == null || e.competencia === comp);
+    const max = evs.reduce((a, e) => a + e.puntos, 0);
+    if (max <= 0) return null;
+    return evs.reduce((a, e) => a + puntosEst[e.id], 0) / max;
+  };
+  if (act.modo !== 'multi') {
+    const f = sumar(null);
+    return f == null ? null : { nota: r1(f * 100), distribucion: null };
+  }
+  const comps = act.competencias_multi ? JSON.parse(act.competencias_multi) : [];
+  if (comps.length === 0) return null;
+  const techo = 100 / comps.length;
+  const distribucion = {};
+  for (const c of comps) {
+    const f = sumar(c);
+    if (f == null) return null;
+    distribucion[c] = r1(Math.min(f * techo, techo));
+  }
+  return { nota: notaFromDist(distribucion), distribucion };
+}
+
 class SistemaDB {
   constructor() { this.db = null; }
 
@@ -83,6 +202,11 @@ class SistemaDB {
     try { this.db.prepare('ALTER TABLE temas ADD COLUMN meta_json TEXT').run() } catch (_) {}
 
     this.db.exec("CREATE TABLE IF NOT EXISTS actividad_temas (actividad_id INTEGER NOT NULL, tema_id INTEGER NOT NULL, PRIMARY KEY (actividad_id, tema_id), FOREIGN KEY (actividad_id) REFERENCES actividades(id) ON DELETE CASCADE, FOREIGN KEY (tema_id) REFERENCES temas(id) ON DELETE CASCADE)")
+
+    // Evidencias del plan por actividad (semana) y los puntos crudos de cada estudiante.
+    // La nota de la actividad se deriva de aquí y se guarda en `calificaciones` como siempre.
+    this.db.exec("CREATE TABLE IF NOT EXISTS actividad_evidencias (id INTEGER PRIMARY KEY AUTOINCREMENT, actividad_id INTEGER NOT NULL, competencia TEXT NOT NULL, nombre TEXT NOT NULL, sesion TEXT DEFAULT '', instrumento TEXT DEFAULT '', puntos REAL NOT NULL, orden INTEGER DEFAULT 0, FOREIGN KEY (actividad_id) REFERENCES actividades(id) ON DELETE CASCADE)")
+    this.db.exec("CREATE TABLE IF NOT EXISTS evidencia_puntos (evidencia_id INTEGER NOT NULL, estudiante_id INTEGER NOT NULL, puntos REAL NOT NULL, PRIMARY KEY (evidencia_id, estudiante_id), FOREIGN KEY (evidencia_id) REFERENCES actividad_evidencias(id) ON DELETE CASCADE, FOREIGN KEY (estudiante_id) REFERENCES estudiantes(id))")
   }
 
   crearTablas() {
@@ -286,19 +410,7 @@ class SistemaDB {
         const titulo = it.titulo || 'Sin titulo';
         if (existeTema.get(cursoId, periodo.id, materiaId || null, titulo)) { omitidos++; return; }
         ordenBase += 1;
-        const d = (it.detalle && typeof it.detalle === 'object') ? it.detalle : {};
-        const meta = {
-          semana: it.semana ?? null, texto_ampliado: it.texto_ampliado || null,
-          subtitulo: d.subtitulo || null, fase: d.fase || null, competencia: d.competencia || null,
-          indicadores: d.indicadores || null, peso: d.peso || null, instrumento: d.instrumento || null,
-          actividades: d.actividades || null, texto_biblico: d.texto_biblico || null,
-          metacognicion: d.metacognicion || null, recursos: d.recursos || null,
-          materiales: d.materiales || null, actividades_cuaderno: d.actividades_cuaderno || null,
-          classroom_txt: d.classroom_txt || null, rubrica: d.rubrica || null, nota_sustituto: d.nota_sustituto || null,
-          origen: 'portal-ars',
-        };
-        Object.keys(meta).forEach(k => { if (meta[k] === null) delete meta[k]; });
-        insertTema.run(materiaId || null, cursoId, periodo.id, titulo, 'pendiente', ordenBase, it.contenido || '', Object.keys(meta).length > 0 ? JSON.stringify(meta) : null);
+        insertTema.run(materiaId || null, cursoId, periodo.id, titulo, 'pendiente', ordenBase, it.contenido || '', metaTemaPortalArs(it));
         count++;
       });
     });
@@ -493,8 +605,9 @@ deleteEstudiante(id) {
   }
 
   getActividades(cursoId, periodoId, materiaId) {
-    if (materiaId) return this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=? ORDER BY fecha DESC,id DESC").all(cursoId, periodoId, materiaId);
-    return this.db.prepare("SELECT * FROM actividades WHERE curso_id=? AND periodo_id=? ORDER BY fecha DESC,id DESC").all(cursoId, periodoId);
+    const cols = "*, (SELECT COUNT(*) FROM actividad_evidencias ev WHERE ev.actividad_id=actividades.id) AS n_evidencias";
+    if (materiaId) return this.db.prepare(`SELECT ${cols} FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id=? ORDER BY fecha DESC,id DESC`).all(cursoId, periodoId, materiaId);
+    return this.db.prepare(`SELECT ${cols} FROM actividades WHERE curso_id=? AND periodo_id=? ORDER BY fecha DESC,id DESC`).all(cursoId, periodoId);
   }
   createActividad(d) {
     const modo = d.modo || 'simple';
@@ -572,6 +685,8 @@ deleteEstudiante(id) {
   }
 
   deleteActividad(id) {
+    this.db.prepare("DELETE FROM evidencia_puntos WHERE evidencia_id IN (SELECT id FROM actividad_evidencias WHERE actividad_id=?)").run(id);
+    this.db.prepare("DELETE FROM actividad_evidencias WHERE actividad_id=?").run(id);
     this.db.prepare("DELETE FROM actividad_temas WHERE actividad_id=?").run(id);
     this.db.prepare("DELETE FROM calificaciones WHERE actividad_id=?").run(id);
     return this.db.prepare("DELETE FROM actividades WHERE id=?").run(id);
@@ -584,7 +699,11 @@ deleteEstudiante(id) {
     let copiadas = 0;
     for (const a of acts) {
       const existe = this.db.prepare("SELECT id FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id IS ? AND nombre=?").get(targetCursoId, targetPeriodoId, materiaId||null, a.nombre);
-      if (!existe) { ins.run(materiaId||null, targetCursoId, targetPeriodoId, a.nombre, a.tipo, a.competencia, a.fecha, a.peso, a.descripcion||'', a.modo||'simple', a.competencias_multi||null); copiadas++; }
+      if (!existe) {
+        const r = ins.run(materiaId||null, targetCursoId, targetPeriodoId, a.nombre, a.tipo, a.competencia, a.fecha, a.peso, a.descripcion||'', a.modo||'simple', a.competencias_multi||null);
+        this._copiarEvidencias(a.id, r.lastInsertRowid);
+        copiadas++;
+      }
     }
     return { total: acts.length, copiadas };
   }
@@ -614,6 +733,253 @@ deleteEstudiante(id) {
   getDistribucionMulti(actividadId, estudianteId) {
     const row = this.db.prepare("SELECT distribucion_multi FROM calificaciones WHERE actividad_id=? AND estudiante_id=?").get(actividadId, estudianteId);
     return row?.distribucion_multi ? JSON.parse(row.distribucion_multi) : null;
+  }
+
+  // ── REGISTRO POR EVIDENCIAS ──────────────────────────────────────────────
+  // Vista previa de "Crear actividades desde el plan". Sin `json`, busca la evaluación
+  // guardada en los temas del período (importados de Portal-Ars con plan_periodo).
+  // filasWeb: semanas del web.json (si se tiene) para crear en el Temario los temas que falten.
+  prepararPlanEvaluacion(json, cursoId, periodoId, materiaId, filasWeb = null) {
+    const curso   = this.db.prepare("SELECT id, nombre, grado FROM cursos WHERE id=?").get(cursoId);
+    const periodo = this.db.prepare("SELECT id, nombre, numero_orden FROM periodos WHERE id=?").get(periodoId);
+    if (!curso || !periodo) return { error: 'Curso o período no encontrado.' };
+
+    const temas = this.db.prepare("SELECT id, titulo, meta_json FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id IS ? ORDER BY orden, id")
+      .all(cursoId, periodoId, materiaId || null)
+      .map(t => { let meta = {}; try { meta = t.meta_json ? JSON.parse(t.meta_json) : {}; } catch (_) {} return { id: t.id, titulo: t.titulo, meta }; });
+
+    let origen = 'archivo';
+    if (json == null) {
+      const conPlan = temas.find(t => t.meta.plan_periodo && t.meta.plan_periodo.evaluacion);
+      if (!conPlan) return { sinPlanGuardado: true };
+      json = { ...conPlan.meta.plan_periodo, semanas: temas.filter(t => t.meta.semana != null).map(t => ({ semana: t.meta.semana, titulo: t.titulo })) };
+      origen = 'temario';
+    }
+
+    const plan = leerPlanEvaluacion(json);
+    if (plan.error) return plan;
+
+    const avisos = [...plan.avisos];
+    const num = s => { const m = /\d+/.exec(String(s || '')); return m ? Number(m[0]) : null; };
+    if (plan.grado && curso.grado && num(plan.grado) !== num(curso.grado)) avisos.push(`El plan es de ${plan.grado} y el curso es ${curso.grado}.`);
+    if (plan.periodo && plan.periodo !== periodo.numero_orden) avisos.push(`El plan es del período ${plan.periodo} y estás en ${periodo.nombre}.`);
+
+    const existentes = this.db.prepare(`SELECT a.id, a.nombre, a.peso,
+        (SELECT COUNT(*) FROM calificaciones c WHERE c.actividad_id=a.id AND c.nota IS NOT NULL) AS notas
+      FROM actividades a WHERE a.curso_id=? AND a.periodo_id=? AND a.materia_id IS ? ORDER BY a.id`).all(cursoId, periodoId, materiaId || null);
+
+    const semanas = plan.semanas.map(s => {
+      const fila = Array.isArray(filasWeb) ? filasWeb.find(f => Number(f.semana) === s.semana) : null;
+      const tema = this._temaDeSemana(temas, s.semana, fila);
+      const act = existentes.find(a => a.nombre === s.nombre);
+      return {
+        ...s, existe: !!act,
+        existeSinTema: !!act && this.getActividadTemas(act.id).length === 0,
+        temaId: tema ? tema.id : null, temaTitulo: tema ? tema.titulo : null,
+        temaNuevo: !tema && fila ? (fila.titulo || 'Semana ' + s.semana) : null,
+      };
+    });
+    return { origen, grado: plan.grado, periodo: plan.periodo, unidad: plan.unidad, semanas, avisos, existentes };
+  }
+
+  // Tema ya existente para una semana: por meta.semana o por el mismo título del web.json.
+  _temaDeSemana(temas, semana, fila) {
+    return temas.find(t => Number(t.meta.semana) === semana)
+      || (fila && fila.titulo ? temas.find(t => t.titulo === fila.titulo) : null)
+      || null;
+  }
+
+  // Crea una actividad por semana con sus evidencias. Idempotente: si ya existe una
+  // actividad con el mismo nombre en el curso/período/materia, esa semana se omite.
+  crearActividadesDesdePlan({ cursoId, periodoId, materiaId, semanas, filasWeb }) {
+    if (!Number.isInteger(cursoId) || !Number.isInteger(periodoId)) return { error: 'Curso o período inválido.' };
+    if (!Array.isArray(semanas) || semanas.length === 0) return { error: 'No hay semanas para crear.' };
+
+    for (const s of semanas) {
+      const peso = Number(s.peso);
+      if (!s.nombre || !String(s.nombre).trim()) return { error: 'Hay una semana sin nombre.' };
+      if (!Number.isFinite(peso) || peso <= 0 || peso > 100) return { error: `${s.nombre}: el peso debe estar entre 1 y 100.` };
+      const comps = Array.isArray(s.competencias) ? s.competencias : [];
+      const desconocidas = comps.filter(c => !ORDEN_COMPS.includes(c));
+      if (desconocidas.length) { console.warn('Competencias desconocidas en el plan:', desconocidas); return { error: `${s.nombre}: competencia desconocida (${desconocidas.join(', ')}).` }; }
+      if (comps.length === 0) return { error: `${s.nombre}: no tiene competencias.` };
+      const evs = Array.isArray(s.evidencias) ? s.evidencias : [];
+      for (const e of evs) {
+        const p = Number(e.puntos);
+        if (!comps.includes(e.competencia)) return { error: `${s.nombre}: la evidencia "${e.nombre}" es de una competencia que la semana no tiene.` };
+        if (!Number.isFinite(p) || p <= 0) return { error: `${s.nombre}: la evidencia "${e.nombre}" tiene puntos inválidos.` };
+      }
+      for (const c of comps) if (!evs.some(e => e.competencia === c)) return { error: `${s.nombre}: la competencia ${c} no tiene evidencias.` };
+    }
+
+    const existe = this.db.prepare("SELECT id FROM actividades WHERE curso_id=? AND periodo_id=? AND materia_id IS ? AND nombre=?");
+    const insAct = this.db.prepare("INSERT INTO actividades (materia_id,curso_id,periodo_id,nombre,tipo,competencia,fecha,peso,descripcion,modo,competencias_multi) VALUES (?,?,?,?,?,?,NULL,?,'',?,?)");
+    const insEv  = this.db.prepare("INSERT INTO actividad_evidencias (actividad_id,competencia,nombre,sesion,instrumento,puntos,orden) VALUES (?,?,?,?,?,?,?)");
+    const leerTemas = () => this.db.prepare("SELECT id, titulo, meta_json FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id IS ? ORDER BY orden, id")
+      .all(cursoId, periodoId, materiaId || null)
+      .map(t => { let meta = {}; try { meta = t.meta_json ? JSON.parse(t.meta_json) : {}; } catch (_) {} return { id: t.id, titulo: t.titulo, meta }; });
+    const insTema = this.db.prepare("INSERT INTO temas (materia_id, curso_id, periodo_id, titulo, estado, orden, contenido_texto, meta_json) VALUES (?, ?, ?, ?, 'pendiente', ?, ?, ?)");
+    const filas = Array.isArray(filasWeb) ? filasWeb.filter(f => f && typeof f === 'object' && f.semana != null) : [];
+
+    let creadas = 0, omitidas = 0, temasCreados = 0, vinculadas = 0;
+    this.db.transaction(() => {
+      // Temas: los que falten se crean en ESTE curso/período/materia (el mismo de las actividades).
+      let temas = leerTemas();
+      let orden = this.db.prepare("SELECT COALESCE(MAX(orden),0) AS m FROM temas WHERE curso_id=? AND periodo_id=? AND materia_id IS ?").get(cursoId, periodoId, materiaId || null).m;
+      const temaPorSemana = {};
+      for (const s of semanas) {
+        const fila = filas.find(f => Number(f.semana) === Number(s.semana));
+        let tema = this._temaDeSemana(temas, Number(s.semana), fila);
+        if (!tema && fila) {
+          const r = insTema.run(materiaId || null, cursoId, periodoId, fila.titulo || 'Semana ' + s.semana, ++orden, fila.contenido || '', metaTemaPortalArs(fila));
+          temasCreados++;
+          temas = leerTemas();
+          tema = temas.find(t => t.id === r.lastInsertRowid);
+        }
+        if (tema) temaPorSemana[s.semana] = tema.id;
+      }
+
+      for (const s of semanas) {
+        const nombre = String(s.nombre).trim();
+        const temaId = temaPorSemana[s.semana];
+        const ya = existe.get(cursoId, periodoId, materiaId || null, nombre);
+        if (ya) {
+          // Actividad ya creada antes sin tema: se vincula ahora (no toca notas ni evidencias).
+          if (temaId && this.getActividadTemas(ya.id).length === 0) { this.setActividadTemas(ya.id, [temaId]); vinculadas++; }
+          omitidas++; continue;
+        }
+        const comps = ORDEN_COMPS.filter(c => s.competencias.includes(c));
+        const multi = comps.length > 1;
+        const r = insAct.run(materiaId || null, cursoId, periodoId, nombre, s.tipo || 'Tarea', comps[0], Number(s.peso), multi ? 'multi' : 'simple', multi ? JSON.stringify(comps) : null);
+        s.evidencias.forEach((e, i) => insEv.run(r.lastInsertRowid, e.competencia, String(e.nombre), e.sesion || '', e.instrumento || '', Number(e.puntos), i));
+        if (temaId) { this.setActividadTemas(r.lastInsertRowid, [temaId]); vinculadas++; }
+        creadas++;
+      }
+    })();
+    return { creadas, omitidas, temasCreados, vinculadas };
+  }
+
+  _copiarEvidencias(origenActId, destinoActId) {
+    this.db.prepare(`INSERT INTO actividad_evidencias (actividad_id,competencia,nombre,sesion,instrumento,puntos,orden)
+      SELECT ?, competencia, nombre, sesion, instrumento, puntos, orden FROM actividad_evidencias WHERE actividad_id=? ORDER BY orden, id`).run(destinoActId, origenActId);
+  }
+
+  _evidenciasDe(actividadId) {
+    return this.db.prepare("SELECT * FROM actividad_evidencias WHERE actividad_id=? ORDER BY orden, id").all(actividadId);
+  }
+
+  _puntosPorEstudiante(evidencias) {
+    const puntos = {};
+    if (evidencias.length === 0) return puntos;
+    const rows = this.db.prepare(`SELECT evidencia_id, estudiante_id, puntos FROM evidencia_puntos WHERE evidencia_id IN (${evidencias.map(() => '?').join(',')})`).all(...evidencias.map(e => e.id));
+    for (const r of rows) (puntos[r.estudiante_id] = puntos[r.estudiante_id] || {})[r.evidencia_id] = r.puntos;
+    return puntos;
+  }
+
+  // Estado de cada estudiante: completa (nota calculada), pendiente (faltan evidencias),
+  // directa (nota escrita a mano, sin evidencias anotadas) o vacia.
+  _estadoEvidencias(evidencias, puntosEst, calif) {
+    const anotadas = evidencias.filter(e => puntosEst[e.id] != null).length;
+    if (anotadas === 0) return calif && calif.nota != null ? 'directa' : 'vacia';
+    return anotadas === evidencias.length ? 'completa' : 'pendiente';
+  }
+
+  getEvidenciasActividad(actividadId) {
+    const act = this.db.prepare("SELECT * FROM actividades WHERE id=?").get(actividadId);
+    if (!act) return { error: 'Actividad no existe' };
+    const evidencias  = this._evidenciasDe(actividadId);
+    const puntos      = this._puntosPorEstudiante(evidencias);
+    const estudiantes = this.getEstudiantes(act.curso_id);
+    const califs = {};
+    for (const c of this.db.prepare("SELECT estudiante_id, nota, distribucion_multi FROM calificaciones WHERE actividad_id=?").all(actividadId)) califs[c.estudiante_id] = c;
+    const porEstudiante = {};
+    for (const est of estudiantes) {
+      const c = califs[est.id];
+      porEstudiante[est.id] = {
+        puntos: puntos[est.id] || {},
+        nota: c && c.nota != null ? c.nota : null,
+        distribucion: c && c.distribucion_multi ? JSON.parse(c.distribucion_multi) : null,
+        estado: this._estadoEvidencias(evidencias, puntos[est.id] || {}, c),
+      };
+    }
+    return { actividad: act, evidencias, porEstudiante };
+  }
+
+  _recalcularNotaEvidencias(act, evidencias, estudianteId) {
+    const puntosEst = this._puntosPorEstudiante(evidencias)[estudianteId] || {};
+    const res = notaDesdeEvidencias(act, evidencias, puntosEst);
+    if (res) {
+      this.db.prepare(`INSERT INTO calificaciones (actividad_id,estudiante_id,nota,observacion,distribucion_multi) VALUES (?,?,?,'',?)
+        ON CONFLICT(actividad_id, estudiante_id) DO UPDATE SET nota=excluded.nota, distribucion_multi=excluded.distribucion_multi`)
+        .run(act.id, estudianteId, res.nota, res.distribucion ? JSON.stringify(res.distribucion) : null);
+    } else {
+      // Pendiente: se quita la nota (no se pone 0) para que no cuente hasta completarse.
+      this.db.prepare("UPDATE calificaciones SET nota=NULL, distribucion_multi=NULL WHERE actividad_id=? AND estudiante_id=?").run(act.id, estudianteId);
+    }
+    const calif = this.db.prepare("SELECT nota FROM calificaciones WHERE actividad_id=? AND estudiante_id=?").get(act.id, estudianteId);
+    return {
+      estado: this._estadoEvidencias(evidencias, puntosEst, calif),
+      nota: res ? res.nota : null,
+      distribucion: res ? res.distribucion : null,
+    };
+  }
+
+  // puntos null/'' borra el dato de esa evidencia (vuelve a pendiente).
+  setPuntosEvidencia({ evidenciaId, estudianteId, puntos }) {
+    const ev = this.db.prepare("SELECT * FROM actividad_evidencias WHERE id=?").get(evidenciaId);
+    if (!ev) return { error: 'Evidencia no existe' };
+    const act = this.db.prepare("SELECT * FROM actividades WHERE id=?").get(ev.actividad_id);
+    const est = this.db.prepare("SELECT id, curso_id FROM estudiantes WHERE id=?").get(estudianteId);
+    if (!act || !est || est.curso_id !== act.curso_id) return { error: 'El estudiante no es de este curso' };
+
+    if (puntos === null || puntos === undefined || puntos === '') {
+      this.db.prepare("DELETE FROM evidencia_puntos WHERE evidencia_id=? AND estudiante_id=?").run(evidenciaId, estudianteId);
+    } else {
+      const p = Number(puntos);
+      if (!Number.isFinite(p)) return { error: 'Escribe un número' };
+      if (p < 0) return { error: 'No puede ser negativo' };
+      if (p > ev.puntos) return { error: `El máximo es ${ev.puntos}` };
+      this.db.prepare("INSERT INTO evidencia_puntos (evidencia_id, estudiante_id, puntos) VALUES (?,?,?) ON CONFLICT(evidencia_id, estudiante_id) DO UPDATE SET puntos=excluded.puntos")
+        .run(evidenciaId, estudianteId, p);
+    }
+    return this._recalcularNotaEvidencias(act, this._evidenciasDe(act.id), estudianteId);
+  }
+
+  // "Pendientes → 0": completa con 0 las evidencias que faltan. No toca a quien tiene
+  // una nota escrita a mano sin evidencias anotadas.
+  cerrarPendientesEvidencias(actividadId) {
+    const act = this.db.prepare("SELECT * FROM actividades WHERE id=?").get(actividadId);
+    if (!act) return { error: 'Actividad no existe' };
+    const evidencias = this._evidenciasDe(actividadId);
+    if (evidencias.length === 0) return { error: 'La actividad no tiene evidencias' };
+    const puntos = this._puntosPorEstudiante(evidencias);
+    const califStmt = this.db.prepare("SELECT nota FROM calificaciones WHERE actividad_id=? AND estudiante_id=?");
+    const ins = this.db.prepare("INSERT OR IGNORE INTO evidencia_puntos (evidencia_id, estudiante_id, puntos) VALUES (?,?,0)");
+    let completados = 0;
+    this.db.transaction(() => {
+      for (const est of this.getEstudiantes(act.curso_id)) {
+        const estado = this._estadoEvidencias(evidencias, puntos[est.id] || {}, califStmt.get(actividadId, est.id));
+        if (estado !== 'pendiente' && estado !== 'vacia') continue;
+        for (const e of evidencias) ins.run(e.id, est.id);
+        this._recalcularNotaEvidencias(act, evidencias, est.id);
+        completados++;
+      }
+    })();
+    return { completados };
+  }
+
+  // Datos para la planilla (una actividad o todo el período) y para listar pendientes.
+  getPlanillaEvidencias(cursoId, periodoId, materiaId, actividadId) {
+    const acts = actividadId
+      ? this.db.prepare("SELECT * FROM actividades WHERE id=? AND curso_id=? AND periodo_id=? AND materia_id IS ?").all(actividadId, cursoId, periodoId, materiaId || null)
+      : this.db.prepare(`SELECT * FROM actividades a WHERE curso_id=? AND periodo_id=? AND materia_id IS ?
+          AND EXISTS (SELECT 1 FROM actividad_evidencias ev WHERE ev.actividad_id=a.id) ORDER BY a.id`).all(cursoId, periodoId, materiaId || null);
+    const estudiantes = this.getEstudiantes(cursoId);
+    const actividades = acts.map(act => {
+      const d = this.getEvidenciasActividad(act.id);
+      return { ...act, competencias: act.modo === 'multi' && act.competencias_multi ? JSON.parse(act.competencias_multi) : [act.competencia], evidencias: d.evidencias, porEstudiante: d.porEstudiante };
+    }).filter(a => a.evidencias.length > 0);
+    return { estudiantes, actividades };
   }
 
   // Resumen grupal por competencia para actividades modo='multi'.

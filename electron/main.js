@@ -270,6 +270,41 @@ ipcMain.handle('confirmar-import-padron',  (_, anioId, grupos) => db.confirmarIm
   ipcMain.handle('get-calificaciones',            (_, actId)      => db.getCalificaciones(actId));
   ipcMain.handle('set-calificacion',             (_, d)          => db.setCalificacion(d));
   ipcMain.handle('set-calificacion-multi',       (_, d)          => db.setCalificacionMulti(d));
+
+  // ── Registro por evidencias ──
+  // Sin archivo: usa la evaluación guardada en el Temario. Con `elegirArchivo`: abre plan.json / web.json.
+  ipcMain.handle('preparar-plan-evaluacion', async (_, { cursoId, periodoId, materiaId, elegirArchivo }) => {
+    let json = null, archivo = null, filasWeb = null;
+    if (elegirArchivo) {
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        title: 'Abrir plan del período (plan.json o web.json)',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+        properties: ['openFile'],
+      });
+      if (canceled || filePaths.length === 0) return null;
+      try {
+        json = JSON.parse(fs.readFileSync(filePaths[0], 'utf-8'));
+        archivo = path.basename(path.dirname(filePaths[0])) + path.sep + path.basename(filePaths[0]);
+      } catch (err) {
+        return { error: 'El archivo no contiene JSON válido: ' + err.message };
+      }
+      // Los temas salen del web.json: es el elegido, o el que está en la misma carpeta que el plan.json.
+      if (Array.isArray(json)) filasWeb = json;
+      else {
+        const web = path.join(path.dirname(filePaths[0]), 'web.json');
+        try { if (fs.existsSync(web)) { const w = JSON.parse(fs.readFileSync(web, 'utf-8')); if (Array.isArray(w)) filasWeb = w; } }
+        catch (err) { console.warn('web.json junto al plan no se pudo leer:', err.message); }
+      }
+    }
+    const res = db.prepararPlanEvaluacion(json, cursoId, periodoId, materiaId, filasWeb);
+    if (!res || res.error || res.sinPlanGuardado) return res;
+    return { ...res, archivo, filasWeb };
+  });
+  ipcMain.handle('crear-actividades-plan',   (_, d)            => db.crearActividadesDesdePlan(d));
+  ipcMain.handle('get-evidencias-actividad', (_, actId)        => db.getEvidenciasActividad(actId));
+  ipcMain.handle('set-puntos-evidencia',     (_, d)            => db.setPuntosEvidencia(d));
+  ipcMain.handle('cerrar-pendientes-evidencias', (_, actId)    => db.cerrarPendientesEvidencias(actId));
+  ipcMain.handle('get-planilla-evidencias',  (_, cId, pId, mId, actId) => db.getPlanillaEvidencias(cId, pId, mId, actId || null));
   ipcMain.handle('get-distribucion-multi',       (_, aId, eId)   => db.getDistribucionMulti(aId, eId));
   ipcMain.handle('get-resumen-competencias-multi',(_, cId, pId, mId) => db.getResumenCompetenciasMulti(cId, pId, mId));
   ipcMain.handle('get-resumen-competencias-multi-por-estudiante',(_, eId, cId, pId, mId) => db.getResumenCompetenciasMultiPorEstudiante(eId, cId, pId, mId));
