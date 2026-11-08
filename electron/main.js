@@ -340,6 +340,25 @@ ipcMain.handle('get-reporte-individual', (_, estudianteId, cursoId, periodoId, m
 ipcMain.handle('get-export-portal-ars', (_, cursoId, periodoId, materiaId) =>
   db.getExportPortalArs(cursoId, periodoId, materiaId || null));
 
+// Envío directo del reporte a Portal-Ars (Tanda 35 de ese proyecto):
+// mismas filas que el CSV + el detalle por semana. El emparejamiento por
+// grado + sección + N.º lo hace el servidor; lo que no empareja vuelve
+// en sin_match y no se guarda.
+ipcMain.handle('enviar-reporte-portal-ars', async (_, filas) => {
+  try {
+    const cfg = db.getConfig();
+    const sesion = await _loginPortalArs(cfg.pin_portal_ars);
+    if (sesion.error) return { error: sesion.error };
+    const res = await _portalArsRpc('admin_enviar_reporte_maestro', { p_pin_hash: sesion.token, p_filas: filas });
+    if (!res || !res.ok) return { error: (res && res.error) || 'Portal-Ars no aceptó el envío.' };
+    return { ok: true, guardados: res.guardados, sin_match: res.sin_match || [] };
+  } catch (err) {
+    console.error('enviar-reporte-portal-ars error:', err);
+    const msg = /404/.test(err.message) ? 'Falta correr la Tanda 35 en Supabase (Portal-Ars).' : err.message;
+    return { error: msg };
+  }
+});
+
 ipcMain.handle('guardar-csv-portal-ars', async (_, csvTexto, nombreSugerido) => {
   const { canceled, filePath } = await dialog.showSaveDialog({
     title: 'Guardar archivo para Portal-Ars',

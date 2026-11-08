@@ -1488,6 +1488,16 @@ deleteEstudiante(id) {
     const actParams = materiaId ? [cursoId, periodoId, materiaId] : [cursoId, periodoId];
     const actividadesCalificadas = (this.db.prepare(actQ).get(...actParams) || { n: 0 }).n;
 
+    // Para el detalle por semana: una actividad está «iniciada» cuando
+    // algún estudiante del curso ya tiene nota o puntos de evidencia en
+    // ella; ahí, a quien le falta, le queda «pendiente» (no «por venir»).
+    const califStmt = this.db.prepare("SELECT nota FROM calificaciones WHERE actividad_id=? AND estudiante_id=?");
+    const notaDeAct = (actId, estId) => califStmt.get(actId, estId);
+    const iniciadasQ = `SELECT a.id FROM actividades a WHERE a.curso_id=? AND a.periodo_id=?${materiaId ? ' AND a.materia_id=?' : ''} AND (
+        EXISTS (SELECT 1 FROM calificaciones c WHERE c.actividad_id=a.id AND c.nota IS NOT NULL) OR
+        EXISTS (SELECT 1 FROM actividad_evidencias ev JOIN evidencia_puntos ep ON ep.evidencia_id=ev.id WHERE ev.actividad_id=a.id))`;
+    const iniciadas = new Set(this.db.prepare(iniciadasQ).all(...actParams).map(r => r.id));
+
     const filas = estudiantes.map(est => {
       const notasQ = materiaId
         ? "SELECT c.nota, a.peso FROM calificaciones c JOIN actividades a ON c.actividad_id=a.id WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=? AND a.materia_id=? AND c.nota IS NOT NULL"
@@ -1537,8 +1547,24 @@ deleteEstudiante(id) {
       const am = {};
       asistRows.forEach(r => { am[r.estado] = r.n; });
 
+      // Detalle semana por semana para Portal-Ars (cada actividad del
+      // período = una semana con su peso). El portal muestra «12 de 15».
+      // No cambia ninguna fórmula: solo lee la nota ya calculada.
+      const semanas = actividades.map(act => {
+        const calif = notaDeAct(act.id, est.id);
+        const nota = calif && calif.nota !== null && calif.nota !== undefined ? calif.nota : null;
+        return {
+          corto: (String(act.nombre || '').split(' — ')[0] || act.nombre || '').trim(),
+          titulo: act.nombre || '',
+          peso: act.peso || 0,
+          nota,
+          estado: nota !== null ? 'completa' : (iniciadas.has(act.id) ? 'pendiente' : 'por_venir'),
+        };
+      });
+
       return {
         numero_orden: est.numero_lista,
+        detalle: { semanas },
         promedio_general: promedioGeneral,
         promedio_comunicativa: comp('Comunicativa'),
         promedio_pensamiento_logico: comp('Pensamiento Logico'),

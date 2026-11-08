@@ -446,6 +446,7 @@ export default function Reportes({ anio, materia, cursoActivoId, onCambiarCurso,
   const [arsPeriodoId,      setArsPeriodoId]      = useState(null)
   const [arsActPlaneadas,   setArsActPlaneadas]   = useState('')
   const [arsGenerando,      setArsGenerando]      = useState(false)
+  const [arsResultado,      setArsResultado]      = useState(null) // { ok, guardados, sin_match } | { error }
   const modalArsT = useModalTransition(modalArs)
 
   // Cargar cursos y períodos al montar
@@ -500,7 +501,49 @@ export default function Reportes({ anio, materia, cursoActivoId, onCambiarCurso,
     setArsSecciones([])
     setArsPeriodoId(periodoSel?.id || null)
     setArsActPlaneadas('')
+    setArsResultado(null)
     setModalArs(true)
+  }
+
+  // Envío directo a Portal-Ars, con el detalle semana por semana. Las
+  // actividades planeadas son opcionales acá: si no se escriben, se toman
+  // las actividades que ya existen en el período (las del plan).
+  async function enviarArs() {
+    const periodoObj = periodos.find(p => p.id === arsPeriodoId)
+    const cursosSel  = cursos.filter(c => arsSecciones.includes(c.id))
+    if (!periodoObj || cursosSel.length === 0) return
+    setArsGenerando(true)
+    setArsResultado(null)
+    const materiaNombre = materia?.nombre || 'General'
+    const actPlanEscrito = parseInt(arsActPlaneadas, 10)
+    const filas = []
+    try {
+      for (const curso of cursosSel) {
+        const datos = await window.api.invoke('get-export-portal-ars', curso.id, periodoObj.id, materia?.id || null)
+        datos.estudiantes.forEach(e => {
+          const nSemanas = (e.detalle?.semanas || []).length
+          filas.push({
+            grado: datos.grado, seccion: datos.seccion, numero_orden: e.numero_orden,
+            materia: materiaNombre, periodo: String(periodoObj.numero_orden),
+            promedio_general: e.promedio_general,
+            promedio_comunicativa: e.promedio_comunicativa,
+            promedio_pensamiento_logico: e.promedio_pensamiento_logico,
+            promedio_civica: e.promedio_civica,
+            promedio_tecnologica: e.promedio_tecnologica,
+            actividades_calificadas: datos.actividades_calificadas,
+            actividades_planeadas: actPlanEscrito > 0 ? actPlanEscrito : nSemanas,
+            asist_presentes: e.asist_presentes, asist_ausentes: e.asist_ausentes,
+            asist_tardanzas: e.asist_tardanzas, asist_excusados: e.asist_excusados,
+            detalle: e.detalle,
+          })
+        })
+      }
+      const res = await window.api.invoke('enviar-reporte-portal-ars', filas)
+      setArsResultado(res && res.ok ? { ...res, total: filas.length } : { error: (res && res.error) || 'No se pudo enviar.' })
+    } catch (err) {
+      setArsResultado({ error: err.message })
+    }
+    setArsGenerando(false)
   }
 
   function csvEscape(v) {
@@ -897,18 +940,53 @@ export default function Reportes({ anio, materia, cursoActivoId, onCambiarCurso,
               />
               <p style={{ color: '#AAB4C4', fontSize: 11.5, marginTop: 4 }}>
                 Portal-Ars usa este número junto con las que ya calificaste para mostrarle al estudiante un avance real del período, no solo el promedio de lo hecho hasta ahora.
+                Para «Enviar a Portal-Ars» es opcional: si lo dejás vacío se toman las actividades que ya tiene el período.
               </p>
             </div>
+
+            {arsResultado && (
+              <div style={{
+                marginBottom: 16, padding: '10px 12px', borderRadius: 8, fontSize: 13,
+                background: arsResultado.error ? '#FEF2F2' : '#F0FDF4',
+                border: '1px solid ' + (arsResultado.error ? '#FECACA' : '#BBF7D0'),
+                color: arsResultado.error ? '#991B1B' : '#166534',
+              }}>
+                {arsResultado.error ? <>❌ {arsResultado.error}</> : <>
+                  ✅ Enviado: {arsResultado.guardados} de {arsResultado.total} estudiante(s) ya pueden verlo en Portal-Ars.
+                  {arsResultado.sin_match.length > 0 && (
+                    <div style={{ color: '#92400E', marginTop: 6 }}>
+                      {arsResultado.sin_match.length} no se encontraron en el portal (revisá que el N.º de lista sea el mismo):
+                      <div style={{ marginTop: 4, fontSize: 12 }}>
+                        {arsResultado.sin_match.map(s => `${s.grado} ${s.seccion} N.º ${s.numero_orden}`).join(' · ')}
+                      </div>
+                    </div>
+                  )}
+                </>}
+              </div>
+            )}
 
             {arsGenerando ? (
               <div style={{ textAlign: 'center', padding: '10px 0' }}>
                 <div className="spinner" style={{ margin: '0 auto 10px' }} />
-                <div style={{ fontSize: 13, color: '#555' }}>Generando archivo...</div>
+                <div style={{ fontSize: 13, color: '#555' }}>Preparando...</div>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 <button onClick={() => setModalArs(false)} style={{ padding: '9px 20px', background: '#EEF2F7', border: '1px solid #DDE3ED', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#555' }}>
-                  Cancelar
+                  {arsResultado && arsResultado.ok ? 'Cerrar' : 'Cancelar'}
+                </button>
+                <button
+                  onClick={enviarArs}
+                  disabled={!arsGrado || arsSecciones.length === 0 || !arsPeriodoId}
+                  title="Lo manda directo al portal con el detalle semana por semana (usa el PIN de Configuración → Portal-Ars)"
+                  style={{
+                    padding: '9px 20px', border: '1.5px solid #166534', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                    background: '#fff', color: (!arsGrado || arsSecciones.length === 0 || !arsPeriodoId) ? '#AAA' : '#166534',
+                    borderColor: (!arsGrado || arsSecciones.length === 0 || !arsPeriodoId) ? '#DDD' : '#166534',
+                    cursor: (!arsGrado || arsSecciones.length === 0 || !arsPeriodoId) ? 'default' : 'pointer',
+                  }}
+                >
+                  🌐 Enviar a Portal-Ars
                 </button>
                 <button
                   onClick={generarExportArs}
