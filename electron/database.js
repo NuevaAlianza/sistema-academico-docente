@@ -3,6 +3,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const { app } = require('electron');
 const { randomUUID } = require('node:crypto');
+const padronPortal = require('./padronPortal');
 
 // Distribución por defecto: cada comp al techo (100 / n_comps).
 // Usada al abrir celda vacía o al cambiar competencias de una actividad.
@@ -558,11 +559,16 @@ class SistemaDB {
         if (!nombre) continue;
         const existente = this.db.prepare("SELECT id,nombre_completo FROM estudiantes WHERE curso_id=? AND numero_lista=? AND estado='activo'").get(cursoId, est.numero || 0);
         if (existente) {
-          if (existente.nombre_completo !== nombre) {
+          if (existente.nombre_completo === nombre) {
+            sinCambios++;
+          } else if (padronPortal.parecido(existente.nombre_completo, nombre) >= 0.75) {
+            // Mismo estudiante, nombre escrito distinto: se corrige.
             this.db.prepare("UPDATE estudiantes SET nombre_completo=? WHERE id=?").run(nombre, existente.id);
             actualizados++;
           } else {
-            sinCambios++;
+            // Otra persona en ese número (la lista se corrió): NO se
+            // renombra, porque sus notas pasarían a otro estudiante.
+            errores.push(`${g.grado} ${g.seccion} N.º ${est.numero}: en el archivo es «${nombre}» pero acá es «${existente.nombre_completo}». No se tocó: usá «Novedades de Portal-Ars» para reacomodar la lista.`);
           }
         } else {
           this.db.prepare("INSERT INTO estudiantes (curso_id,codigo_unico,numero_lista,nombre_completo) VALUES (?,?,?,?)").run(cursoId, '', est.numero || 0, nombre);
@@ -571,6 +577,62 @@ class SistemaDB {
       }
     }
     return { cursosCreados, insertados, actualizados, sinCambios, errores };
+  }
+
+  // ── Novedades de Portal-Ars (sugerencias elegidas por el maestro) ──
+  // Ver electron/padronPortal.js. Todo en una transacción: si al final
+  // quedan dos estudiantes activos con el mismo N.º en un curso, no se
+  // aplica nada.
+  getEstudiantesActivosAnio(anioEscolarId) {
+    return this.db.prepare(`SELECT e.id, e.curso_id, e.numero_lista, e.nombre_completo FROM estudiantes e
+      JOIN cursos c ON c.id=e.curso_id WHERE c.anio_escolar_id=? AND c.estado='activo' AND e.estado='activo'`).all(anioEscolarId);
+  }
+
+  aplicarNovedadesPortal(acciones) {
+    const ins = this.db.prepare("INSERT INTO estudiantes (curso_id,codigo_unico,numero_lista,nombre_completo) VALUES (?,?,?,?)");
+    const setNum = this.db.prepare("UPDATE estudiantes SET numero_lista=? WHERE id=?");
+    const retirar = this.db.prepare("UPDATE estudiantes SET estado='retirado' WHERE id=?");
+    const cuenta = { agregados: 0, renumerados: 0, movidos: 0, retirados: 0 };
+    const cursosTocados = new Set();
+    try {
+      this.db.transaction(() => {
+        // 1) Renumerar en dos pasos (temporal alto) para que los
+        //    intercambios #27 <-> #28 no choquen a mitad de camino.
+        const renum = acciones.filter(a => a.tipo === 'numero');
+        for (const a of renum) setNum.run(100000 + a.numero, a.localId);
+        for (const a of renum) { setNum.run(a.numero, a.localId); cuenta.renumerados++; cursosTocados.add(a.cursoId); }
+        // 2) Retirar (salió / no está / el lugar viejo de quien se mueve)
+        for (const a of acciones) {
+          if (a.tipo === 'salio' || a.tipo === 'no_esta' || a.tipo === 'mover') {
+            retirar.run(a.localId);
+            if (a.tipo !== 'mover') cuenta.retirados++;
+          }
+        }
+        // 3) Altas: nuevos y el lugar nuevo de quien se mueve (sus notas
+        //    viejas quedan en el curso anterior, como retirado).
+        for (const a of acciones) {
+          if (a.tipo === 'agregar' || a.tipo === 'mover') {
+            ins.run(a.cursoId, '', a.numero, a.nombre);
+            cursosTocados.add(a.cursoId);
+            if (a.tipo === 'agregar') cuenta.agregados++; else cuenta.movidos++;
+          }
+        }
+        // 4) Ningún N.º repetido entre los activos de los cursos tocados
+        const dup = this.db.prepare(`SELECT c.nombre AS curso, e.numero_lista AS numero, GROUP_CONCAT(e.nombre_completo, ' / ') AS nombres
+          FROM estudiantes e JOIN cursos c ON c.id=e.curso_id
+          WHERE e.estado='activo' AND e.curso_id IN (${[...cursosTocados].map(() => '?').join(',') || 'NULL'})
+          GROUP BY e.curso_id, e.numero_lista HAVING COUNT(*) > 1`).all(...cursosTocados);
+        if (dup.length) {
+          const err = new Error('numeros_repetidos');
+          err.detalle = dup.map(d => `${d.curso} N.º ${d.numero}: ${d.nombres}`);
+          throw err;
+        }
+      })();
+    } catch (e) {
+      if (e.message === 'numeros_repetidos') return { error: 'Quedarían números de lista repetidos. No se aplicó nada.', detalle: e.detalle };
+      return { error: e.message };
+    }
+    return { ok: true, ...cuenta };
   }
 
   getEstudiantesTodos(cursoId) {

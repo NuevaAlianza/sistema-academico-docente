@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useModalTransition } from '../hooks/useModalTransition'
 import { useCursoActivo } from '../hooks/useSeleccionActiva'
+import NovedadesPortal from '../components/NovedadesPortal'
 
 const VACIO = { nombre:'', codigo:'', numero:'' }
 const COLORES_PER = ['#2563A8','#00695C','#5C2D91','#1A6B3A']
@@ -370,6 +371,7 @@ export default function Estudiantes({ anio, materia, cursoActivoId, onCambiarCur
           style={{ width:'100%', marginTop:10, padding:'8px 6px', background:'#F0FDF4', color:'#166534', border:'1px dashed #86EFAC', borderRadius:8, fontSize:11.5, fontWeight:700, cursor:'pointer' }}>
           📥 Importar padrón completo
         </button>
+        <NovedadesPortal anio={anio} onAplicado={() => window.api.invoke('get-cursos', anio.id).then(setCursos)} />
       </div>
 
       {/* PANEL PRINCIPAL */}

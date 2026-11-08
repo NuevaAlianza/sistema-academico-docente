@@ -340,6 +340,28 @@ ipcMain.handle('get-reporte-individual', (_, estudianteId, cursoId, periodoId, m
 ipcMain.handle('get-export-portal-ars', (_, cursoId, periodoId, materiaId) =>
   db.getExportPortalArs(cursoId, periodoId, materiaId || null));
 
+// Novedades del padrón de Portal-Ars: compara los cursos activos del año
+// con los estudiantes del portal y devuelve SUGERENCIAS (no cambia nada).
+ipcMain.handle('novedades-portal-ars', async (_, anioId) => {
+  try {
+    const cfg = db.getConfig();
+    const sesion = await _loginPortalArs(cfg.pin_portal_ars);
+    if (sesion.error) return { error: sesion.error };
+    const res = await _portalArsRpc('admin_listar_estudiantes', { p_pin_hash: sesion.token });
+    if (!res || !res.ok) return { error: (res && res.error) || 'No se pudo leer la lista de Portal-Ars.' };
+    const cursos = db.getCursos(anioId);
+    const locales = db.getEstudiantesActivosAnio(anioId);
+    const pp = require('./padronPortal');
+    const r = pp.compararConPortal(cursos, locales, res.estudiantes || []);
+    return { ok: true, ...r, marcadas: pp.marcadasPorDefecto(r.sugerencias, locales) };
+  } catch (err) {
+    console.error('novedades-portal-ars error:', err);
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('aplicar-novedades-portal-ars', (_, acciones) => db.aplicarNovedadesPortal(acciones));
+
 // Envío directo del reporte a Portal-Ars (Tanda 35 de ese proyecto):
 // mismas filas que el CSV + el detalle por semana. El emparejamiento por
 // grado + sección + N.º lo hace el servidor; lo que no empareja vuelve
