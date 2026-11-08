@@ -1,5 +1,18 @@
 # Changelog — Sistema Académico Docente
 
+## [1.11.0] — 2026-11-08
+
+### Added (Nuevo)
+- **Enviar a Portal-Ars** (Reportes → "Exportar para Portal-Ars" → "🌐 Enviar a Portal-Ars"): manda directo al portal, con el PIN de Configuración, el promedio del período, las competencias, la asistencia y el **detalle semana por semana** (peso de cada semana, nota, completa / pendiente / por venir). El estudiante ve en Portal-Ars cuántos puntos lleva («12 de 15»). Avisa qué números de lista no existen en el portal. El botón "Generar archivo" sigue igual.
+- **Novedades de Portal-Ars** (Estudiantes → "🌐 Novedades de Portal-Ars"): compara tus cursos con la lista del portal (actualizada desde el SIGERD) y sugiere estudiantes nuevos, cambios de número de lista, cambios de sección y quiénes ya no están. Compara por nombre (tolera errores de tipeo), nunca por número. Solo se aplica lo que marques, todo junto; si quedarían números repetidos no se aplica nada.
+
+### Fixed (Corregido)
+- "Importar padrón completo" ya no le pone a un estudiante el nombre de otra persona cuando la lista se corrió (eso pasaba sus notas a otro). Ahora lo informa y no lo toca.
+
+### Internal (Interno)
+- `electron/padronPortal.js` (comparación de nombres), `src/components/NovedadesPortal.jsx`. Sin cambios en la base de datos ni en las fórmulas de cálculo.
+- Requiere en Portal-Ars las Tandas 33, 34 y 35 (ya corridas).
+
 ## [1.10.0] — 2026-10-28
 
 ### Added (Nuevo)
