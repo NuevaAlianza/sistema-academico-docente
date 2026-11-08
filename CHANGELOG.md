@@ -3,7 +3,7 @@
 ## [1.11.0] — 2026-11-08
 
 ### Added (Nuevo)
-- **Enviar a Portal-Ars** (Reportes → "Exportar para Portal-Ars" → "🌐 Enviar a Portal-Ars"): manda directo al portal, con el PIN de Configuración, el promedio del período, las competencias, la asistencia y el **detalle semana por semana** (peso de cada semana, nota, completa / pendiente / por venir). El estudiante ve en Portal-Ars cuántos puntos lleva («12 de 15»). Avisa qué números de lista no existen en el portal. El botón "Generar archivo" sigue igual.
+- **Enviar a Portal-Ars** (Reportes → "Exportar para Portal-Ars" → "🌐 Enviar a Portal-Ars"): manda directo al portal, con el PIN de Configuración, el promedio del período, las competencias, la asistencia y el **detalle semana por semana** (peso de cada semana, nota, completa / pendiente / por venir). El estudiante ve en Portal-Ars cuántos puntos lleva («12 de 15»). Avisa qué números de lista no existen en el portal. El botón "Generar archivo" sigue igual. Se envía también el nombre del maestro (Configuración), que el portal muestra como firma de la boleta.
 - **Novedades de Portal-Ars** (Estudiantes → "🌐 Novedades de Portal-Ars"): compara tus cursos con la lista del portal (actualizada desde el SIGERD) y sugiere estudiantes nuevos, cambios de número de lista, cambios de sección y quiénes ya no están. Compara por nombre (tolera errores de tipeo), nunca por número. Solo se aplica lo que marques, todo junto; si quedarían números repetidos no se aplica nada.
 
 ### Fixed (Corregido)

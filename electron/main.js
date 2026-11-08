@@ -371,6 +371,12 @@ ipcMain.handle('enviar-reporte-portal-ars', async (_, filas) => {
     const cfg = db.getConfig();
     const sesion = await _loginPortalArs(cfg.pin_portal_ars);
     if (sesion.error) return { error: sesion.error };
+    // El nombre del maestro (Configuración) viaja en el detalle: el portal
+    // lo muestra como firma de la boleta. El valor de ejemplo no se manda.
+    const maestro = String(cfg.nombre_maestro || '').trim();
+    if (maestro && maestro !== 'Prof. Nombre Apellido') {
+      for (const f of filas) if (f.detalle) f.detalle.maestro = maestro;
+    }
     const res = await _portalArsRpc('admin_enviar_reporte_maestro', { p_pin_hash: sesion.token, p_filas: filas });
     if (!res || !res.ok) return { error: (res && res.error) || 'Portal-Ars no aceptó el envío.' };
     return { ok: true, guardados: res.guardados, sin_match: res.sin_match || [] };
