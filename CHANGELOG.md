@@ -1,5 +1,13 @@
 # Changelog — Sistema Académico Docente
 
+## [1.11.1] — 2026-11-08
+
+### Added (Nuevo)
+- "Enviar a Portal-Ars" manda también las **evidencias de cada semana** (nombre, competencia, sesión, puntos sacados de puntos posibles). En la boleta del portal, el estudiante toca una semana y ve de qué actividades salió su nota («Mapa conceptual · Comunicativa · 10 de 15»).
+
+### Internal (Interno)
+- Solo lectura de `actividad_evidencias` y `evidencia_puntos`; sin cambios en la base de datos ni en las fórmulas (verificado: 2049/2049 promedios iguales).
+
 ## [1.11.0] — 2026-11-08
 
 ### Added (Nuevo)

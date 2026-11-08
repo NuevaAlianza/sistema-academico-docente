@@ -1,6 +1,6 @@
 {
   "name": "sistema-academico-docente",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "description": "Sistema de gestión académica para docentes",
   "main": "electron/main.js",
   "scripts": {

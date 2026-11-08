@@ -1560,6 +1560,18 @@ deleteEstudiante(id) {
         EXISTS (SELECT 1 FROM actividad_evidencias ev JOIN evidencia_puntos ep ON ep.evidencia_id=ev.id WHERE ev.actividad_id=a.id))`;
     const iniciadas = new Set(this.db.prepare(iniciadasQ).all(...actParams).map(r => r.id));
 
+    // Evidencias de cada actividad del período y los puntos de cada
+    // estudiante, leídas una sola vez para todo el curso (el portal las
+    // muestra al tocar una semana: «Mapa conceptual · 16 de 20»).
+    const evidCache = new Map();
+    const evidenciasDeAct = (actId) => {
+      if (!evidCache.has(actId)) {
+        const evs = this._evidenciasDe(actId);
+        evidCache.set(actId, { evs, puntos: this._puntosPorEstudiante(evs) });
+      }
+      return evidCache.get(actId);
+    };
+
     const filas = estudiantes.map(est => {
       const notasQ = materiaId
         ? "SELECT c.nota, a.peso FROM calificaciones c JOIN actividades a ON c.actividad_id=a.id WHERE c.estudiante_id=? AND a.curso_id=? AND a.periodo_id=? AND a.materia_id=? AND c.nota IS NOT NULL"
@@ -1615,12 +1627,23 @@ deleteEstudiante(id) {
       const semanas = actividades.map(act => {
         const calif = notaDeAct(act.id, est.id);
         const nota = calif && calif.nota !== null && calif.nota !== undefined ? calif.nota : null;
+        const ev = evidenciasDeAct(act.id);
+        const misPuntos = ev.puntos[est.id] || {};
         return {
           corto: (String(act.nombre || '').split(' — ')[0] || act.nombre || '').trim(),
           titulo: act.nombre || '',
           peso: act.peso || 0,
           nota,
           estado: nota !== null ? 'completa' : (iniciadas.has(act.id) ? 'pendiente' : 'por_venir'),
+          // multi = cada competencia pesa lo mismo dentro de la semana
+          modo: act.modo === 'multi' ? 'multi' : 'simple',
+          evidencias: ev.evs.map(e => ({
+            nombre: e.nombre,
+            competencia: e.competencia,
+            sesion: e.sesion || '',
+            max: e.puntos,
+            puntos: misPuntos[e.id] ?? null,
+          })),
         };
       });
 
